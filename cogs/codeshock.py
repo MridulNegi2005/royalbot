@@ -51,15 +51,38 @@ class codeshock(commands.Cog):
         sql = 'INSERT INTO temprole ("user","role","time") VALUES ( %s,%s,%s)'
         role=ctx.guild.get_role(1191376926263230526)
         await ctx.author.add_roles(role)
-        #try:
-        val = (user.id,1191376926263230526,int(time.time()+duration))
+        try:
+            val = (user.id,1191376926263230526,int(time.time()+duration))
+            query.execute(sql, val)
+            con.commit()
+            await ctx.respond(f"Successfully added <@&1191376926263230526> role to <@{user.id}>!",allowed_mentions=discord.AllowedMentions(roles=False))
+        except Exception as e:
+            await ctx.author.remove_roles(role)
+            await ctx.respond(f"An error occured while adding <@&1191376926263230526> role to <@{user.id}>!\nError : {e}",ephemeral=True)
+    @supporter.command(guild_ids=[767591734841835540],description="Remove Code Shock role")
+    async def remove(self,ctx,user:Option(discord.Member,"Member you wanted to remove code shock role from"),duration:Option(str,"Enter Duration for code shock role to remove. Seperate each time values with a space. Eg :1d 12h")):
+        duration=converttime(duration)
+        if duration=="error":
+            await ctx.respond("The time unit is not valid",ephemeral=True)
+            return
+        sql = 'SELECT * FROM "temprole" WHERE "user"=%s AND "role"=%s'
+        val = (user.id,1191376926263230526)
         query.execute(sql, val)
-        con.commit()
-        await ctx.respond(f"Successfully added <@&1191376926263230526> role to <@{user.id}>!",allowed_mentions=discord.AllowedMentions.roles.novb)
-        #test
-        #except Exception as e:
-         #   await ctx.author.remove_roles(role)
-          #  await ctx.respond(f"An error occured while adding <@&1191376926263230526> role to <@{user.id}>!\nError : {e}",ephemeral=True)
+        myresult = query.fetchall()
+        if len(myresult)!=0:
+            time2=myresult[0][2]
+            duration=time2-duration
+            sql = 'UPDATE "temprole" SET "time"=%s WHERE "user"=%s AND "role"=%s'
+            val = (time2,user.id,1191376926263230526)
+            try:
+                query.execute(sql, val)
+                con.commit()
+                await ctx.respond(f"Successfully decreased <@{user.id}>'s role duration!")
+            except Exception as e:
+                await ctx.respond(f"An error occured while adding time to <@{user.id}>!\nError : {e}",ephemeral=True)
+            return
+        else:
+            await ctx.respond(f"<@{user.id}> doesn't have <@&1191376926263230526> role!",ephemeral=True)
     @supporter.command(guild_ids=[767591734841835540],description="Know duration of code shock role")
     async def duration(self,ctx,user:Option(discord.Member,"Member you wanted to know the duration of code shock role")):
         sql = 'SELECT * FROM "temprole" WHERE "user"=%s AND "role"=%s'
@@ -93,6 +116,7 @@ def converttime(duration):
     return ftime
 def convert(seconds):
     day = seconds // (24 * 3600)
+    seconds %= (24 * 3600)
     hour = seconds // 3600
     seconds %= 3600  
     minutes = seconds // 60
