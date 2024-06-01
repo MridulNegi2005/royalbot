@@ -50,14 +50,14 @@ class codeshock(commands.Cog):
             return
         sql = 'INSERT INTO temprole ("user","role","time") VALUES ( %s,%s,%s)'
         role=ctx.guild.get_role(1191376926263230526)
-        await ctx.author.add_roles(role)
+        await user.add_roles(role)
         try:
             val = (user.id,1191376926263230526,int(time.time()+duration))
             query.execute(sql, val)
             con.commit()
             await ctx.respond(f"Successfully added <@&1191376926263230526> role to <@{user.id}>!",allowed_mentions=discord.AllowedMentions(roles=False))
         except Exception as e:
-            await ctx.author.remove_roles(role)
+            await user.remove_roles(role)
             await ctx.respond(f"An error occured while adding <@&1191376926263230526> role to <@{user.id}>!\nError : {e}",ephemeral=True)
     @supporter.command(guild_ids=[767591734841835540],description="Remove Code Shock role")
     async def remove(self,ctx,user:Option(discord.Member,"Member you wanted to remove code shock role from"),duration:Option(str,"Enter Duration for code shock role to remove. Seperate each time values with a space. Eg :1d 12h")):
@@ -71,7 +71,9 @@ class codeshock(commands.Cog):
         myresult = query.fetchall()
         if len(myresult)!=0:
             time2=myresult[0][2]
-            duration=time2-duration
+            print(time2)
+            time2-=duration
+            print(duration)
             sql = 'UPDATE "temprole" SET "time"=%s WHERE "user"=%s AND "role"=%s'
             val = (time2,user.id,1191376926263230526)
             try:
