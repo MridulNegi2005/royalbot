@@ -20,7 +20,18 @@ app = cloud.apps()['royal-disc-bot']
 web = app.process_formation()['web']
 temp_role='hello'
 whitelist=[767591735295213580]
-con = psycopg2.connect('postgres://balxuonbzytruy:2be081d80c21d0869d500f997e19ff385ad5278d020402608fc23ac1f8d71bc6@ec2-52-73-184-24.compute-1.amazonaws.com:5432/des0u9rjq76pq', sslmode='require')
+def get_connection():
+    try:
+        return psycopg2.connect(
+            database="postgres",
+            user="postgres",
+            password="cosmicbot",
+            host="35.225.24.72",
+            port=5432,
+        )
+    except:
+        return False
+con = get_connection()
 query = con.cursor()
 conn = sqlite3.connect('help.db')
 cur = conn.cursor()
@@ -111,7 +122,8 @@ async def on_ready():
 	bot.load_extension("cogs.sub")
 	print('We have logged in as {0.user}'.format(bot))
 bot.load_extension("cogs.info")
-bot.load_extension("cogs.wikipedia")
+bot.load_extension("cogs.codeshock")
+#bot.load_extension("cogs.wikipedia")
 bot.load_extension("cogs.weather")
 bot.load_extension("cogs.eval")
 bot.load_extension("cogs.fake")
@@ -219,7 +231,6 @@ async def channels(ctx):
 			await ctx.send(embed=chan)
 			chan = discord.Embed(title="\u200b",color=0xbbff87)
 		chan.add_field(name=x, value="\u200b", inline=False)
-		
 	await ctx.send(embed=chan)
 
 @bot.slash_command(description="Get help related this bot.")

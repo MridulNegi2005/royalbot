@@ -279,16 +279,17 @@ class levelling(commands.Cog):
             self.bcolor = '#ff1f97'
             self.overlay = Editor("cogs/assests/overlay2.png")
             self.name_color = '#11ebf2'
-        
+
         avatar = await load_image_async(str(user.display_avatar.url))
         avatar = Editor(avatar).resize((177, 177)).circle_image()
-        self.overlay = Editor(self.overlay).resize((230, 230))
+        self.overlay =Editor(self.overlay).resize((230, 230))
 
         square = Canvas((500, 500), "#06FFBF")
         square = Editor(square)
         square.rotate(30, expand=True)
 
         self.background.paste(square.image, (600, -250))
+
         self.background.paste(avatar.image, (38, 40))
         if self.overlay_option == "True":
             self.background.paste(self.overlay.image, (10, 15))
@@ -355,11 +356,6 @@ class levelling(commands.Cog):
         offset_y = bar_offset_y - text_size[1] - 5
         draw.text((offset_x, offset_y),user.name, font=name, fill='#FF4242',stroke_width=1, stroke_fill='#FF4242')
 
-        # Discriminator
-        offset_x += text_size[0] + 5
-        offset_y += 5
-
-        draw.text((offset_x, offset_y),f"#{user.discriminator}", font=small_font, fill="#ffffff")
 
         with io.BytesIO() as image_binary:
             self.background.save(image_binary, 'PNG')

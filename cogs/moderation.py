@@ -8,15 +8,7 @@ from firebase_admin import firestore
 from discord.commands import slash_command,SlashCommandGroup,permissions,Option
 import datetime,asyncio
 import time
-from google.cloud import storage
-#storage_client = storage.Client.from_service_account_json('cogs/cosmic-bot-314006-99863b3bb618.json')
 from main import query,con
-import os
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"]="firestore.json"
-firebase_admin.initialize_app()
-db = firestore.AsyncClient()
-
-warn = db.collection("warn")
 
 class Moderation(commands.Cog):
     def __init__(self, bot):
@@ -60,11 +52,12 @@ class Moderation(commands.Cog):
     @discord.default_permissions(ban_members=True,)
     async def mute(self,ctx, member: Option(discord.Member,"Member who you want to mute!"),duration:Option(str,"Enter Duration.Seperate each time values with a space. Eg : 1d 12h"),reason:Option(str,"Reason")):
         if ctx.author.top_role > member.top_role:
-            duration = datetime.timedelta(seconds=converttime(duration))
-            mute = discord.Embed(title="User Muted",description=f"{member.mention} has been muted  muted for {convert(converttime(duration))}.\nReason : {reason}",color=0xff4242)
+            duration = converttime(str(duration))
+            duration2 = datetime.timedelta(seconds=duration)
+            mute = discord.Embed(title="User Muted",description=f"{member.mention} has been muted  muted for {convert(duration)}.\nReason : {reason}",color=0xff4242)
             
-            await member.timeout_for(duration)
-            await ctx.respond(f'User {member} has been muted for {convert(converttime(duration))}. Reason : '+reason)# I already did this work 
+            await member.timeout_for(duration2)
+            await ctx.respond(f'User {member} has been muted for {convert(duration)}. Reason : {reason}')# I already did this work 
             
         else :
             await ctx.respond(embed=mute)
@@ -146,6 +139,7 @@ class Moderation(commands.Cog):
     @slash_command(guild_ids=[767591734841835540],default_permission=False)
     async def warnings(self,ctx, member: Option(discord.Member,"Member whose warn you want to check",required=False,deafult=None)):
         user = member
+        staff = False
         if user == None:
             user = ctx.author
         else:
@@ -168,7 +162,7 @@ class Moderation(commands.Cog):
                 
         warns = discord.Embed(color=0xe83535)
         warns.set_author(name=f"{count} Warnings for {user.name} ({user.id})",icon_url = pfp)
-        for x in myresult:
+        for x in myresult.reverse():
             a = str(x)
             a = a.replace('(','')
             a = a.replace(')','')
@@ -176,7 +170,7 @@ class Moderation(commands.Cog):
             y = a.split(',')
             u = y[2].replace(' ','')
             user1 = self.bot.get_user(u) or await self.bot.fetch_user(u)
-            warns.add_field(name=f"Warn ID : {y[3]}  || Moderator : {user1.name}", value=f"Reason : {y[1]} \t -```{y[4]}``` ", inline=False)
+            warns.add_field(name=f"Warn ID : {y[3]}  || Moderator : {user1.name}", value=f"Reason : {y[1]} \t ```{y[4]}``` ", inline=False)
         await ctx.send(embed=warns)
 
 
@@ -185,11 +179,11 @@ class Moderation(commands.Cog):
     async def purge(self,ctx,limit:Option(int,"No. of messages u want to purge!")):
             await ctx.channel.purge(limit=limit)
             await ctx.respond(f"Purged {limit} messages!")
-def converttime(time):
+def converttime(duration):
     ftime=0
-    time = time.split()
+    duration = duration.split()
     units = ["s", "h", "m", "d"]
-    for x in time:
+    for x in duration:
         unit = x[-1]
         if unit not in units:
             return "error"
@@ -217,4 +211,3 @@ def convert(seconds):
     else:return "%02d hr, %02d min and %02d sec" % (hour,minutes,seconds)
 def setup(bot):
     bot.add_cog(Moderation(bot))
-    #I

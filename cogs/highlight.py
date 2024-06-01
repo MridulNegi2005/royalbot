@@ -7,6 +7,7 @@ from discord.ext.commands.cog import Cog
 import psycopg2
 from porter2stemmer import Porter2Stemmer
 from main import query,con
+from discord.commands import slash_command,SlashCommandGroup,permissions,Option
 class highlight(commands.Cog):
     def __init__(self, bot):
         self.bot=bot
@@ -17,15 +18,11 @@ class highlight(commands.Cog):
         self.regex_pattern = re.compile('([^\s\w]|_)+')
         self.website_regex = re.compile("https?:\/\/[^\s]*")
     
-    @commands.command()
-    @commands.has_permissions(kick_members=True)
-    async def highlight(self,ctx,action,*,word=None):
+    @slash_command(guild_ids=[767591734841835540],description="Check your level")
+    async def highlight(self,ctx,action:Option(str,"Select action",choices=['add','remove','list','test']),word:Option(str,"Word to be added")):
         if action.lower() == 'add':
-            if word == None:
-                await ctx.send("Pls Specify word to be added!",delete_after=5.0)
-                return
             if len(word) <=2:
-                await ctx.send("Word should be minimun 3 character long!")
+                await ctx.respond("Word should be minimun 3 character long!",ephemeral=True)
 
             word2 = self.stemmer.stem(word)
             sql = 'SELECT "keyword" FROM highlight WHERE "user" = %s AND "keyword" = %s'
@@ -90,8 +87,7 @@ class highlight(commands.Cog):
                     value=value+f"{a}\n"
             highlight.add_field(name=f"Highlight matches",value=value,inline=True)
             await ctx.send(embed=highlight)
-    @commands.command()
-    @commands.has_permissions(kick_members=True)
+    @slash_command(guild_ids=[767591734841835540],description="Shows your highlights")
     async def show(self,ctx,user:discord.Member):
         if ctx.author.id == 745884061066592266:
             sql = 'SELECT * FROM highlight WHERE "user" = %s'

@@ -10,6 +10,20 @@ from main import query,con
 from dateutil import parser
 import datetime
 import cogs.giveaway as giveaway
+import psycopg2
+def get_connection():
+    try:
+        return psycopg2.connect(
+            database="postgres",
+            user="postgres",
+            password="cosmicbot",
+            host="35.225.24.72",
+            port=5432,
+        )
+    except:
+        return False
+con2 = get_connection()
+query2 = con.cursor()
 api_key = "AIzaSyCzeRWqsVGVUzBGhC-m030YGF-EA0G91QI"
 channel_id = "UCEZqqxc-NMD7uGCod8N0gOw"
 upload_id="UUEZqqxc-NMD7uGCod8N0gOw"
@@ -43,6 +57,7 @@ class sub(commands.Cog):
 	async def getVideo(self):
 		async with aiohttp.ClientSession() as yt:
 			async with yt.get(f'https://www.googleapis.com/youtube/v3/playlistItems?playlistId={upload_id}&key={api_key}&part=snippet&maxResults=5&sort=date') as r:
+				
 				res = await r.json()
 				items = res.get('items', {})
 				video_id = items[0].get('snippet').get('resourceId', {}).get('videoId')
@@ -59,7 +74,8 @@ class sub(commands.Cog):
 					val = (video_id,)
 					query.execute(sql,val)
 					con.commit()
-					if delta.total_seconds()<300:
+					print(delta.total_seconds())
+					if delta.total_seconds()>-1:
 						chan = self.video_chan
 						msg = await chan.send(f"> Hey <@&802048451318775818>, **Cosmic Shock** just uploaded a new video!\nGo check it out and dont forget to like and comment.\nhttps://www.youtube.com/watch?v={video_id}")
 						await msg.add_reaction("<a:CS_CosmicOP:792007397966610492>")
@@ -94,10 +110,10 @@ class sub(commands.Cog):
 			sql='SELECT * FROM gconfig'
 			query.execute(sql)
 			myresult = query.fetchall()
-			time2 = myresult[-1][0]
-			if int(time2)<=int(time.time()):
-				print("here")
-				await giveaway.end2(self)
+			for x in myresult:
+				time2 = x[0]
+				if int(time2)<=int(time.time()):
+					await giveaway.end2(self,x[1])
 		except:
 			pass
 		sql='SELECT * FROM temprole'
@@ -110,7 +126,7 @@ class sub(commands.Cog):
 				user = guild.get_member(y[0])
 				role = guild.get_role(y[1])
 				await user.remove_roles(role)
-				sql = 'DELETE FROM temproe WHERE "user" = %s AND "role" = %s'
+				sql = 'DELETE FROM temprole WHERE "user" = %s AND "role" = %s'
 				val=(y[0],y[1])
 				query.execute(sql,val)
 				con.commit()

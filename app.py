@@ -7,10 +7,14 @@ query = con.cursor()
 @app.route('/')
 def hello_world():
     time2=1686843000
+    msg_id= request.args['msg']
+
     try:
-        sql='SELECT * FROM gconfig'
-        query.execute(sql)
+        sql='SELECT * FROM gconfig where message=%s'
+        query.execute(sql,(msg_id,))
         myresult = query.fetchall()
+        print(myresult)
+        print("UPAR DEKH!")
         time2 = myresult[0][0]
     except:
         pass

@@ -83,6 +83,7 @@ class Confirm(discord.ui.View):
 			
 			for x in guild.members:
 				if mod in x.roles or admin in x.roles:
+					print(x)
 					staff.append(x)
 					await thread.add_user(x)
 			
@@ -195,7 +196,12 @@ async def support(message):
 		if parent == 853590083739582474:
 			try:
 				messages = await thread.pins()
-				member = message.guild.get_member(int(messages[0].content))
+				print(messages[0].content)
+				member =await message.guild.fetch_member(int(messages[0].content))
+				print(member)
+				print(member.dm_channel)
+				for x in dir(member):
+					print(x,"= ",getattr(member,x))
 				if member:
 					if message.content.startswith('='):
 						return
@@ -211,7 +217,13 @@ async def support(message):
 						file.append(await x.to_file())
 					message2 = await member.send(embed = embed1,files=file)
 					view=discord.ui.View(timeout=None)
-					view.add_item(delete(str(message2.id),member.dm_channel))
+					if member.dm_channel is None:
+						await member.create_dm()
+					print(member.dm_channel)
+					print(message2.id)
+					print(message2.channel)
+					print(await member.create_dm())
+					view.add_item(delete(str(message2.id),member.dm_channel))                                              
 					embed = discord.Embed(description = message.content, colour = 0x61eb34)
 					embed.set_author(name = "Message Sent")
 					embed.set_footer(text=message.author,icon_url = message.author.display_avatar.url)
