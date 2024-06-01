@@ -56,6 +56,7 @@ class codeshock(commands.Cog):
         query.execute(sql, val)
         con.commit()
         await ctx.respond(f"Successfully added <@&1191376926263230526> role to <@{user.id}>!",allowed_mentions=discord.AllowedMentions.roles.novb)
+        #test
         #except Exception as e:
          #   await ctx.author.remove_roles(role)
           #  await ctx.respond(f"An error occured while adding <@&1191376926263230526> role to <@{user.id}>!\nError : {e}",ephemeral=True)
