@@ -234,7 +234,7 @@ class enter(discord.ui.View):
         sql='SELECT * FROM giveaway where message=%s'
         query.execute(sql,(interaction.message.id,))
         myresult = query.fetchall()
-        await interaction.response.send_message(f"**Participants** : {len(myresult)}\nClick [here](https://cosmic-bot-314006.firebaseapp.com/?msg={interaction.message.id}) for timer",ephemeral=True)
+        await interaction.response.send_message(f"**Participants** : {len(myresult)}\nClick [here](https://cosmicbot.web.app/?msg={interaction.message.id}) for timer",ephemeral=True)
 class giveaway(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
