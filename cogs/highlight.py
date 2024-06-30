@@ -12,8 +12,8 @@ class highlight(commands.Cog):
     def __init__(self, bot):
         self.bot=bot
         self.last_seen={}
-        self.con = con#psycopg2.connect('postgres://balxuonbzytruy:2be081d80c21d0869d500f997e19ff385ad5278d020402608fc23ac1f8d71bc6@ec2-52-73-184-24.compute-1.amazonaws.com:5432/des0u9rjq76pq', sslmode='require')
-        self.query = query#self.con.cursor()
+        self.con = con
+        self.query = query
         self.stemmer = Porter2Stemmer()
         self.regex_pattern = re.compile('([^\s\w]|_)+')
         self.website_regex = re.compile("https?:\/\/[^\s]*")
