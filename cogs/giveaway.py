@@ -244,7 +244,7 @@ class giveaway(commands.Cog):
 
     @giveaway.command(guild_ids=[767591734841835540],default_permission=False,description="Start the giveaway")
     @discord.default_permissions(administrator=True,)
-    async def start(self,ctx,item:Option(str,"Item you want to giveaway [Eg. Banana Colt Skin]"),winners:Option(int,'Number of winners for this giveaway.',choices=[1,2,3,4,5]),tag:Option(str,"Do you want BS Tag requirement?",choices=['Yes','No']),message:Option(int,"Message requirement?", requirement=False,default=None),picture:Option(discord.Attachment,'Add a picture or gif of what you are giveawaying. Adds to the appeal!',required=False,default=None),role:Option(discord.Role,'Want a role requirement?',required=False,default=None)):
+    async def start(self,ctx,item:Option(str,"Item you want to giveaway [Eg. Banana Colt Skin]"),winners:Option(int,'Number of winners for this giveaway.',choices=[1,2,3,4,5,10,15]),tag:Option(str,"Do you want BS Tag requirement?",choices=['Yes','No']),message:Option(int,"Message requirement?", requirement=False,default=None),picture:Option(discord.Attachment,'Add a picture or gif of what you are giveawaying. Adds to the appeal!',required=False,default=None),role:Option(discord.Role,'Want a role requirement?',required=False,default=None)):
         view = discord.ui.View(timeout=300)
         view.add_item(Dropdown(7,ctx))
         view.add_item(Dropdown(24,ctx))
@@ -318,7 +318,7 @@ class giveaway(commands.Cog):
         sql='SELECT * FROM gconfig'
         query.execute(sql)
         myresult = query.fetchall()
-        if(len(myresult))!=0:
+        if(len(myresult))>0:
             for x in myresult:
                 print(x)
                 print(x[3])
