@@ -36,9 +36,9 @@ class sub(commands.Cog):
 		self.sub_chan = self.bot.get_channel(781207856295706635)
 		self.member_chan =self.bot.get_channel(824170799178580008)
 		self.guild = self.bot.get_guild(767591734841835540)
-		self.getSubscriberCount.start()
+		#self.getSubscriberCount.start()
 		self.mem_update.start()
-		self.getVideo.start()
+		#self.getVideo.start()
 		self.temprole.start()
 		'''sql = 'SELECT * FROM config'
 		self.query=query
