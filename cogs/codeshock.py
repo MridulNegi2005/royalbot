@@ -48,7 +48,8 @@ class codeshock(commands.Cog):
             try:
                 query.execute(sql, val)
                 con.commit()
-                await ctx.respond(f"Successfully extended <@{user.id}>'s role duration!\nTotal duration: {convert(duration)}",allowed_mentions=discord.AllowedMentions.none())
+                time3=duration-int(time.time())
+                await ctx.respond(f"Successfully extended <@{user.id}>'s role duration!\nTotal duration: {convert(time3)}",allowed_mentions=discord.AllowedMentions.none())
             except Exception as e:
                 await ctx.respond(f"An error occured while adding time to <@{user.id}>!\nError : {e}",ephemeral=True)
             return
