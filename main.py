@@ -14,10 +14,10 @@ import sqlite3
 import socket
 import heroku3
 
-KEY='f69844b0-e62b-4448-83d5-914184c2905b'
-cloud = heroku3.from_key(KEY)
-app = cloud.apps()['royal-disc-bot']
-web = app.process_formation()['web']
+#KEY='f69844b0-e62b-4448-83d5-914184c2905b'
+#cloud = heroku3.from_key(KEY)
+#app = cloud.apps()['royal-disc-bot']
+#web = app.process_formation()['web']
 temp_role='hello'
 whitelist=[767591735295213580]
 def get_connection():
@@ -167,7 +167,7 @@ async def unload(ctx,name):
 @discord.default_permissions(administrator=True,)
 async def restart(ctx):
     await ctx.respond("Restarting bot")
-    app.restart()
+    #app.restart()
 '''	
 @bot.slash_command(guild_ids=[767591734841835540])
 async def enlarge(ctx, emoji:discord.PartialEmoji):
