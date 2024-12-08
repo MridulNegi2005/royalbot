@@ -10,10 +10,10 @@ import random
 import base64,json
 import heroku3
 
-KEY='f69844b0-e62b-4448-83d5-914184c2905b'
-cloud = heroku3.from_key(KEY)
-app = cloud.apps()['royal-disc-bot']
-web = app.process_formation()['web']
+#KEY='f69844b0-e62b-4448-83d5-914184c2905b'
+#cloud = heroku3.from_key(KEY)
+#app = cloud.apps()['royal-disc-bot']
+#web = app.process_formation()['web']
 extra = 150
 min= 100
 whitelist=[814016728950112317,883563221947125770] # 250,400,550,700,850,1000,1150,1300,1450
@@ -76,7 +76,7 @@ class Next(discord.ui.Button):
             #self.query.execute(sql)
             #self.con.commit()
         await interaction.response.edit_message(content="Giveaway successfully created in <#783973682137530388>.\n*Do not create any other giveaway while this is running. Else the current giveaway will stop!*",view=None)
-        web.scale(1)
+        
 class Dropdown(discord.ui.Select):
     def __init__(self,x,ctx):
         options=[]
@@ -406,8 +406,6 @@ async def end2(self,message_id):
     sql='SELECT * FROM giveaway'
     query.execute(sql)
     myresult = query.fetchall()
-    if(len(myresult))==0:
-        web.scale(0)
 
 def converttime(time):
     ftime=0

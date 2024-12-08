@@ -138,7 +138,7 @@ class Verify(discord.ui.View):
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
             await channel.send(embed=embed)
             channel = interaction.guild.get_channel(814016728950112317)
-            await channel.send(content=f"Heya {interaction.user.mention} <a:CS_WumpusWaveAnimated:886856730426871818>,\n**Welcome to Cosmic's Universe**! \nCome let's chat here and make some awesome friends <a:CS_BlueHearts:886856930516168705>",delete_after=120)
+            await channel.send(content=f"Heya {interaction.user.mention} <a:nyaaCall:942016595495112735> ,\n**Welcome to Cosmic's Universe**! \nCome let's chat here and make some awesome friends <a:CS_BlueHearts:886856930516168705>",delete_after=120)
         else :
             self.one.disabled=True
             self.two.disabled=True
