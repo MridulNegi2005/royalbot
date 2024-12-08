@@ -44,11 +44,11 @@ class codeshock(commands.Cog):
             time2=myresult[0][2]
             duration=duration+time2
             sql = 'UPDATE "temprole" SET "time"=%s WHERE "user"=%s AND "role"=%s'
-            val = (time2,user.id,1191376926263230526)
+            val = (duration,user.id,1191376926263230526)
             try:
                 query.execute(sql, val)
                 con.commit()
-                await ctx.respond(f"Successfully extended <@{user.id}>'s role duration>!",allowed_mentions=discord.AllowedMentions.none())
+                await ctx.respond(f"Successfully extended <@{user.id}>'s role duration!\nTotal duration: {convert(duration)}",allowed_mentions=discord.AllowedMentions.none())
             except Exception as e:
                 await ctx.respond(f"An error occured while adding time to <@{user.id}>!\nError : {e}",ephemeral=True)
             return
