@@ -40,7 +40,7 @@ class sub(commands.Cog):
 		self.mem_update.start()
 		self.getVideo.start()
 		self.temprole.start()
-		sql = 'SELECT * FROM config'
+		'''sql = 'SELECT * FROM config'
 		self.query=query
 		self.con=con
 		query.execute(sql)
@@ -51,9 +51,9 @@ class sub(commands.Cog):
 			a = a.replace(')','')
 			a = a.replace(',','')
 			a = a.replace("'",'')
-			self.video_id_previous.append(a)
+			self.video_id_previous.append(a)'''
 	
-	@tasks.loop(seconds=15.0)
+	'''@tasks.loop(seconds=15.0)
 	async def getVideo(self):
 		async with aiohttp.ClientSession() as yt:
 			async with yt.get(f'https://www.googleapis.com/youtube/v3/playlistItems?playlistId={upload_id}&key={api_key}&part=snippet&maxResults=5&sort=date') as r:
@@ -92,7 +92,8 @@ class sub(commands.Cog):
 			if sub_count != self.sub_count_previous:
 				chan = self.sub_chan
 				await chan.edit(name=f"YT Subscribers: {int(sub_count)//1000} K",reason="Sub count Update!")
-				self.sub_count_previous = sub_count
+				self.sub_count_previous = sub_count'''
+
 	@tasks.loop(seconds=600.0)
 	async def mem_update(self):
 		guild =self.guild

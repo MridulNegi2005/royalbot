@@ -29,6 +29,9 @@ class codeshock(commands.Cog):
     @supporter.command(guild_ids=[767591734841835540],description="Give Code Shock role",default_permission=False)
     @discord.default_permissions(administrator=True,)
     async def give(self,ctx,user:Option(discord.Member,"Member you wanted to give code shock role"),duration:Option(str,"Enter Duration for code shock role. Seperate each time values with a space. Eg :1d 12h")):
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.respond("Don't try to be over smart!", ephemeral=True)
+            return
         duration=converttime(duration)
         if duration=="error":
             await ctx.respond("The time unit is not valid",ephemeral=True)
@@ -63,6 +66,9 @@ class codeshock(commands.Cog):
     @supporter.command(guild_ids=[767591734841835540],description="Remove Code Shock role",default_permission=False)
     @discord.default_permissions(administrator=True,)
     async def remove(self,ctx,user:Option(discord.Member,"Member you wanted to remove code shock role from"),duration:Option(str,"Enter Duration for code shock role to remove. Seperate each time values with a space. Eg :1d 12h")):
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.respond("Don't try to be over smart!", ephemeral=True)
+            return
         duration=converttime(duration)
         if duration=="error":
             await ctx.respond("The time unit is not valid",ephemeral=True)
