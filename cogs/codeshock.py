@@ -11,7 +11,7 @@ def get_connection():
             database="postgres",
             user="postgres",
             password="cosmicbot",
-            host="35.225.24.72",
+            host="35.223.191.80",
             port=5432,
         )
     except:

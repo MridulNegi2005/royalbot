@@ -6,7 +6,7 @@ import ffmpeg
 import discord
 import asyncio
 import json
-from pytube import YouTube
+from yt_dlp import YoutubeDL
 class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
     def __init__(self, bot):
         self.bot = bot
@@ -53,14 +53,14 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
         if player.requester==None:
             requester = "Autoplay"
         else: requester=player.requester.mention
-        yt = YouTube(player.url)
+        yt = YoutubeDL(player.url)
         embed=discord.Embed(title="<:play:918874928219050094> Now Playing",description=f"**{player.title}**",color=0xfa0a12)
         embed.set_thumbnail(url=yt.thumbnail_url)
         embed.add_field(name="Duration:",value=f"{convert(int(player.duration))}",inline=True)
         embed.add_field(name="Requested By:",value=f"{requester}",inline=True)
         embed.add_field(name="URL",value=f"[Click Here]({player.url})",inline=True)
         embed.add_field(name="Uploaded By:",value=f"[{yt.author}]({yt.channel_url})",inline=True)
-        embed.add_field(name="\u200b",value=f"<:views:918875283526942790> {convert2(int(yt.views))}")
+        #embed.add_field(name="\u200b",value=f"<:views:918875283526942790> {convert2(int(yt.views))}")
         embed.set_footer(text=f"Music By Cosmic Bot",icon_url="https://i.ibb.co/fNkh1QD/avatr.png")
         await ctx.respond(embed=embed)
 
@@ -95,7 +95,7 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
             if player.requester==None:
                 requester = "Autoplay"
             else: requester=player.requester.mention
-            yt = YouTube(player.url)
+            yt = YoutubeDL(player.url)
             played = await self.MusicManager.get_player_played_duration(ctx, player)
             embed=discord.Embed(title="<:play:918874928219050094> Now Playing",description=f"**{player.data['title']}**",color=0xfa0a12)
             embed.set_thumbnail(url=yt.thumbnail_url)
