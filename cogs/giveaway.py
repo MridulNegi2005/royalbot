@@ -4,6 +4,7 @@ from discord.ext.commands.cog import Cog
 from discord.ext import commands
 from main import query,con
 import time
+from datetime import datetime, timezone, timedelta
 from discord.ext import tasks
 import requests
 import random
@@ -28,7 +29,7 @@ class Next(discord.ui.Button):
         self.message=message
         self.tag=tag
         self.role=role
-        self.con = con
+        self.con = con # YOUR user ID to receive DM
         super().__init__(
             label="Next",
             style=discord.enums.ButtonStyle.green,
@@ -346,66 +347,6 @@ class giveaway(commands.Cog):
                             val=(message.author.id,x[1],count)
                             self.query.execute(sql,val)
                             self.con.commit()
-                
-async def end2(self,message_id):
-    sql='SELECT * FROM gconfig where "message"=%s'
-    query.execute(sql,(message_id,))
-    myresult = query.fetchall()
-    lines = myresult[0]
-    print(int(lines[1]))
-    message = await self.bot.get_channel(783973682137530388).fetch_message(int(lines[1]))
-    winner=lines[2]
-    embed = message.embeds[0]
-    embed:discord.Embed
-    embed.set_field_at(index=0,name='Giveaway ended:',value=embed.fields[0].value)
-    entries={}
-    sql='SELECT * FROM giveaway where message=%s'
-    val=(message_id,)
-    query.execute(sql,val)
-    myresult = query.fetchall()
-    print(myresult)
-    for x in myresult:
-        entries[x[0]]=x[1]
-    winners=[]
-    total = len(list(entries.keys()))
-    if int(winner)>len(list(entries.keys())):
-        winner = len(list(entries.keys()))
-    winners= random.sample(list(entries.keys()), int(winner))
-    print(winners)
-    if len(winners)>1: 
-        winner_text="# Congratulations to the winners:\n"
-    else:winner_text="# Congratulations to the winner:\n"
-    if entries[winners[0]]=="None" :
-        tag=0
-    else:
-        tag=1
-    counter=0
-    winner_text2=''
-    for x in winners:
-        if counter!=0:
-            winner_text+='\n'
-            winner_text2+=','
-        if tag==1:
-            winner_text2+=f'<@{x}>'
-            headers = {"Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiIsImtpZCI6IjI4YTMxOGY3LTAwMDAtYTFlYi03ZmExLTJjNzQzM2M2Y2NhNSJ9.eyJpc3MiOiJzdXBlcmNlbGwiLCJhdWQiOiJzdXBlcmNlbGw6Z2FtZWFwaSIsImp0aSI6IjAxM2I2ODNjLTAwN2UtNGI3Yy05ZjI0LWRjYjBiN2QzMGZiMiIsImlhdCI6MTY4NDI5MTY3NCwic3ViIjoiZGV2ZWxvcGVyL2Q5MmEzMjJlLTAzNDQtNWYzMS1jODQ5LWE0YjU0YzQ1MWUxNSIsInNjb3BlcyI6WyJicmF3bHN0YXJzIl0sImxpbWl0cyI6W3sidGllciI6ImRldmVsb3Blci9zaWx2ZXIiLCJ0eXBlIjoidGhyb3R0bGluZyJ9LHsiY2lkcnMiOlsiNDUuNzkuMjE4Ljc5Il0sInR5cGUiOiJjbGllbnQifV19.IpzvftdcLePP8wVd4D5kgSY-3PNXtvigd584IS42-hCEBi1IAfcup9KC0FcU9_kzQ6n5n9WlgeBc02ZUcJ20Gg"}
-        
-            response = requests.get(f'https://bsproxy.royaleapi.dev/v1/players/%23{entries[x]}', headers=headers)
-            winner_text+=f'- <@{x}>\n  - Ingame name : {response.json()["name"]}\n  - Brawl Stars Tag : #{entries[x]}'
-        else:
-            winner_text2+=f'<@{x}>'
-            winner_text+=f'- <@{x}>\n'
-        counter+=1
-    winner_text+=f"\n\nTotal Participants : {total}\n*P.S. : Winners had only {round(((winner/total)*100),2)}% chance of winning*"
-    embed.add_field(name="Winners",value=winner_text2)
-    await message.edit(embed=embed,view=None)
-    message:discord.Message
-    await message.reply(winner_text)
-    sql = 'DELETE FROM "gconfig" where "message"=%s'
-    self.query.execute(sql,(message_id,))
-    self.con.commit()
-    sql='SELECT * FROM giveaway'
-    query.execute(sql)
-    myresult = query.fetchall()
 
 def converttime(time):
     ftime=0

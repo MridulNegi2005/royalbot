@@ -41,6 +41,7 @@ playing=[]
 intents = discord.Intents().all()
 intents.members = True
 intents.message_content=True
+intents.presences = True
 prefix = '*'
 bot = commands.Bot(command_prefix=prefix,intents=intents,activity=discord.Activity(type=discord.ActivityType.listening, name=f"COSMIC'S UNIVERSE | /help"),status=discord.Status.dnd)
 bot.remove_command("help")
