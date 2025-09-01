@@ -348,8 +348,6 @@ class giveaway(commands.Cog):
                             self.query.execute(sql,val)
                             self.con.commit()
 
-    @commands.Cog.listener()
-    async def on_message(self, message):
 
 def converttime(time):
     ftime=0
