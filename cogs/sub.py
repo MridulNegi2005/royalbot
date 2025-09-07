@@ -115,6 +115,10 @@ class sub(commands.Cog):
 				time2 = x[0]
 				if int(time2)<=int(time.time()):
 					await giveaway.end2(self,x[1])
+					# Remove the entry from gconfig to prevent repeated ending
+					sql_del = 'DELETE FROM gconfig WHERE "message" = %s'
+					query.execute(sql_del, (x[1],))
+					con.commit()
 		except:
 			pass
 		sql='SELECT * FROM temprole'
@@ -124,12 +128,23 @@ class sub(commands.Cog):
 			a = str(x)
 			y = ast.literal_eval(a)
 			if y[2] <= int(time.time()):
-				user = guild.get_member(y[0])
-				role = guild.get_role(y[1])
-				await user.remove_roles(role)
-				sql = 'DELETE FROM temprole WHERE "user" = %s AND "role" = %s'
-				val=(y[0],y[1])
-				query.execute(sql,val)
-				con.commit()
+					user = guild.get_member(y[0])
+					role = guild.get_role(y[1])
+					if user is not None and role is not None:
+						await user.remove_roles(role)
+						sql = 'DELETE FROM temprole WHERE "user" = %s AND "role" = %s'
+						val=(y[0],y[1])
+						query.execute(sql,val)
+						con.commit()
+					else:
+						if user is None:
+							print(f"[temprole debug] Member not found for user ID: {y[0]}")
+						if role is None:
+							print(f"[temprole debug] Role not found for role ID: {y[1]}")
+						# Remove the entry from the database if user or role is missing
+						sql = 'DELETE FROM temprole WHERE "user" = %s AND "role" = %s'
+						val = (y[0], y[1])
+						query.execute(sql, val)
+						con.commit()
 def setup(bot):
 	bot.add_cog(sub(bot))
