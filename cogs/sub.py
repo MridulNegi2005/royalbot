@@ -104,7 +104,7 @@ class sub(commands.Cog):
 			return
 		await chan.edit(name=name,reason="Scheduled Member Count Update")
 
-	@tasks.loop(seconds=5.0)
+	@tasks.loop(seconds=10.0)
 	async def temprole(self):
 		guild = self.guild
 		try:
@@ -115,10 +115,6 @@ class sub(commands.Cog):
 				time2 = x[0]
 				if int(time2)<=int(time.time()):
 					await giveaway.end2(self,x[1])
-					# Remove the entry from gconfig to prevent repeated ending
-					sql_del = 'DELETE FROM gconfig WHERE "message" = %s'
-					query.execute(sql_del, (x[1],))
-					con.commit()
 		except:
 			pass
 		sql='SELECT * FROM temprole'
