@@ -111,6 +111,8 @@ class sub(commands.Cog):
 			sql='SELECT * FROM gconfig'
 			query.execute(sql)
 			myresult = query.fetchall()
+			if len(myresult)==0:
+				return
 			for x in myresult:
 				time2 = x[0]
 				if int(time2)<=int(time.time()):
