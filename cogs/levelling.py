@@ -418,11 +418,15 @@ class levelling(commands.Cog):
             x = self.query.fetchall()
             if len(x)>0:
                 xp = x[0][0]
+                level_before= int(0.2*(math.sqrt(xp)))
                 xp=xp+xp_gain
+                level_after= int(0.2*(math.sqrt(xp)))
                 sql = 'UPDATE "levelling" SET "xp" = %s where "user"=%s'
                 val=(xp,message.author.id)
                 self.query.execute(sql,val)
                 self.con.commit()
+                if level_after>level_before:
+                    await message.channel.send(f"Congratulations {message.author.mention},you just reached level {level_after} in this dead server! <:CS_zMilkSip:853199496674279455>",delete_after=60)
             else:
                 xp= xp_gain
                 sql = 'INSERT INTO "levelling" ("user","xp","theme","overlay") values (%s,%s,%s,%s)'
