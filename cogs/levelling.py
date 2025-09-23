@@ -426,7 +426,7 @@ class levelling(commands.Cog):
                 self.query.execute(sql,val)
                 self.con.commit()
                 if level_after>level_before:
-                    await message.channel.send(f"Congratulations {message.author.mention},you just reached level {level_after} in this dead server! <:CS_zMilkSip:853199496674279455>",delete_after=60)
+                    await message.channel.send(f"Congratulations {message.author.mention},you just reached level {level_after} in this dead server! <:CS_zMilkSip:853199496674279455>")
             else:
                 xp= xp_gain
                 sql = 'INSERT INTO "levelling" ("user","xp","theme","overlay") values (%s,%s,%s,%s)'
@@ -443,9 +443,9 @@ class levelling(commands.Cog):
                         await message.author.add_roles(role,reason="Level Up!")
                         roles+=f"{role.name} "
                     if counter ==1:
-                        await message.channel.send(f"Congratulations dear {message.author.mention},you achieved the role {roles}!",delete_after=60)
+                        await message.channel.send(f"Congratulations dear {message.author.mention},you achieved the role {roles}!")
                     elif counter>1:
-                        await message.channel.send(f"Congratulations dear {message.author.mention},you achieved the roles {roles}!",delete_after=60)
+                        await message.channel.send(f"Congratulations dear {message.author.mention},you achieved the roles {roles}!")
             self.cooldown.append(message.author.id)
             await asyncio.sleep(60)
             self.cooldown.remove(message.author.id)
