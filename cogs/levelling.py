@@ -192,16 +192,16 @@ class levelling(commands.Cog):
             if x.id == 767591734850879495:
                 level = 50
                 break
-        if level >= 50:
-            themes[5]="City"
-        if level >= 40:
-            themes[4]="Red Metal"
-        if level >= 30:
-            themes[3]="Cosmos"
+        if level >= 20:
+            themes[5] = "City"
         if level >= 15:
-            themes[2]="Mint"
-        if level >0:
-            themes[1]="Tech"
+            themes[4] = "Red Metal"
+        if level >= 10:
+            themes[3] = "Cosmos"
+        if level >= 5:
+            themes[2] = "Mint"
+        if level > 0:
+            themes[1] = "Tech"
         view = discord.ui.View()
         for x in themes.keys():
             view.add_item(Themes(ctx.user,themes[x],str(x),self.query,self.con))
@@ -442,10 +442,26 @@ class levelling(commands.Cog):
                         counter+=1
                         await message.author.add_roles(role,reason="Level Up!")
                         roles+=f"{role.name} "
-                    if counter ==1:
-                        await message.channel.send(f"Congratulations dear {message.author.mention},you achieved the role {roles}!")
-                    elif counter>1:
-                        await message.channel.send(f"Congratulations dear {message.author.mention},you achieved the roles {roles}!")
+                    theme_unlock_msg = ""
+                    # Check for theme unlocks at new level thresholds
+                    new_level = int(0.2*(math.sqrt(xp)))
+                    theme_unlocks = []
+                    if new_level >= 20:
+                        theme_unlocks.append("City")
+                    elif new_level >= 15:
+                        theme_unlocks.append("Red Metal")
+                    elif new_level >= 10:
+                        theme_unlocks.append("Cosmos")
+                    elif new_level >= 5:
+                        theme_unlocks.append("Mint")
+                    elif new_level > 0:
+                        theme_unlocks.append("Tech")
+                    if theme_unlocks:
+                        theme_unlock_msg = f" You also unlocked the theme: {theme_unlocks[-1]}! Use /theme set to select your new theme."
+                    if counter == 1:
+                        await message.channel.send(f"Congratulations dear {message.author.mention}, you achieved the role {roles}!\n{theme_unlock_msg}")
+                    elif counter > 1:
+                        await message.channel.send(f"Congratulations dear {message.author.mention}, you achieved the roles {roles}!{theme_unlock_msg}")
             self.cooldown.append(message.author.id)
             await asyncio.sleep(60)
             self.cooldown.remove(message.author.id)
