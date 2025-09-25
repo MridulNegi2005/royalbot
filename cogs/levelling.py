@@ -141,11 +141,12 @@ class levelling(commands.Cog):
                         self.parent_view.user_xp,
                         self.parent_view.ctx
                     )
-                    # Send new message as followup with same content, view, and file, then delete old
-                    await interaction.followup.send(
+                    # Send new message as a reply to the previous message, then delete old
+                    await interaction.channel.send(
                         content=f"Theme changed to **{self.label}**!\nYour current level: **{self.parent_view.user_level}** | XP: **{self.parent_view.user_xp}**",
                         view=new_view,
-                        file=file
+                        file=file,
+                        reference=interaction.message
                     )
                     try:
                         await interaction.message.delete()
@@ -191,11 +192,12 @@ class levelling(commands.Cog):
                         self.parent_view.user_xp,
                         self.parent_view.ctx
                     )
-                    # Send new message as followup with same content, view, and file, then delete old
-                    await interaction.followup.send(
+                    # Send new message as a reply to the previous message, then delete old
+                    await interaction.channel.send(
                         content=f"Overlay toggled to **{'ON' if new_state == 'True' else 'OFF'}**.\nYour current level: **{self.parent_view.user_level}** | XP: **{self.parent_view.user_xp}**",
                         view=new_view,
-                        file=file
+                        file=file,
+                        reference=interaction.message
                     )
                     try:
                         await interaction.message.delete()
