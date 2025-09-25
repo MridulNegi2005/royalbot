@@ -693,7 +693,7 @@ class levelling(commands.Cog):
                     elif new_level > 0:
                         theme_unlocks.append("Tech")
                     if theme_unlocks:
-                        theme_unlock_msg = f" You also unlocked the theme: {theme_unlocks[-1]}! Use /theme set to select your new theme."
+                        theme_unlock_msg = f"You also unlocked the theme: {theme_unlocks[-1]}! Use /theme to select your new theme."
                     if counter == 1:
                         await message.channel.send(f"Congratulations dear {message.author.mention}, you achieved the role {roles}!\n{theme_unlock_msg}")
                     elif counter > 1:
