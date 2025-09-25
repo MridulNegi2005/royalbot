@@ -141,11 +141,16 @@ class levelling(commands.Cog):
                         self.parent_view.user_xp,
                         self.parent_view.ctx
                     )
-                    await interaction.response.edit_message(
+                    # Send new message as followup with same content, view, and file, then delete old
+                    await interaction.followup.send(
                         content=f"Theme changed to **{self.label}**!\nYour current level: **{self.parent_view.user_level}** | XP: **{self.parent_view.user_xp}**",
-                        view=new_view
+                        view=new_view,
+                        file=file
                     )
-                    await interaction.message.edit(attachments=[file])
+                    try:
+                        await interaction.message.delete()
+                    except Exception:
+                        pass
 
             class OverlayButton(discord.ui.Button):
                 def __init__(self, overlay_state, style, parent_view):
@@ -186,11 +191,16 @@ class levelling(commands.Cog):
                         self.parent_view.user_xp,
                         self.parent_view.ctx
                     )
-                    await interaction.response.edit_message(
+                    # Send new message as followup with same content, view, and file, then delete old
+                    await interaction.followup.send(
                         content=f"Overlay toggled to **{'ON' if new_state == 'True' else 'OFF'}**.\nYour current level: **{self.parent_view.user_level}** | XP: **{self.parent_view.user_xp}**",
-                        view=new_view
+                        view=new_view,
+                        file=file
                     )
-                    await interaction.message.edit(attachments=[file])
+                    try:
+                        await interaction.message.delete()
+                    except Exception:
+                        pass
 
         # Helper to generate the level card image (like /level)
         async def generate_level_card(user, xp, level, theme, overlay_option):
