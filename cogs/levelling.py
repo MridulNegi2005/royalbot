@@ -50,7 +50,7 @@ class levelling(commands.Cog):
         Only available to admins for testing.
         """
         # Send the rank cards image (ephemeral)
-        await ctx.respond(file=discord.File('cogs/assests/Rank_Cards.png'), ephemeral=True)
+        await ctx.respond(file=discord.File('cogs/assests/Rank_Cards.png'), ephemeral=False)
 
         # Fetch user XP and theme info
         sql = 'SELECT * FROM levelling'
