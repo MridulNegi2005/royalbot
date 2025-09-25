@@ -37,14 +37,14 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
             vc = await self.MusicManager.join(ctx)
             await ctx.respond(f"<:call_connect:918875388527145091> Joined <#{vc.id}>")
 
+        await ctx.defer()  # Prevent interaction timeout
 
         async with ctx.typing():
-            players = await self.MusicManager.create_player(query,ctx.author)
+            players = await self.MusicManager.create_player(query, ctx.author)
 
         if players:
-            if await self.MusicManager.queue_add(players=players,ctx=ctx) and not await self.MusicManager.play(ctx):
+            if await self.MusicManager.queue_add(players=players, ctx=ctx) and not await self.MusicManager.play(ctx):
                 await ctx.respond(f"{players[-1].title}\nAdded to queue")
-
         else:
             await ctx.respond("Query not found.")
             
