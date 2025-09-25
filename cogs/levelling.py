@@ -143,9 +143,9 @@ class levelling(commands.Cog):
                     )
                     await interaction.response.edit_message(
                         content=f"Theme changed to **{self.label}**!\nYour current level: **{self.parent_view.user_level}** | XP: **{self.parent_view.user_xp}**",
-                        view=new_view,
-                        attachments=[file]
+                        view=new_view
                     )
+                    await interaction.message.edit(attachments=[file])
 
             class OverlayButton(discord.ui.Button):
                 def __init__(self, overlay_state, style, parent_view):
@@ -188,9 +188,9 @@ class levelling(commands.Cog):
                     )
                     await interaction.response.edit_message(
                         content=f"Overlay toggled to **{'ON' if new_state == 'True' else 'OFF'}**.\nYour current level: **{self.parent_view.user_level}** | XP: **{self.parent_view.user_xp}**",
-                        view=new_view,
-                        attachments=[file]
+                        view=new_view
                     )
+                    await interaction.message.edit(attachments=[file])
 
         # Helper to generate the level card image (like /level)
         async def generate_level_card(user, xp, level, theme, overlay_option):
@@ -266,7 +266,7 @@ class levelling(commands.Cog):
         view = ThemeTestView(ctx.author.id, theme, overlay, level, xp, ctx)
         # Generate initial level card image
         file = await generate_level_card(ctx.author, xp, level, theme, overlay)
-        await ctx.send_followup(content=msg, view=view, file=file, ephemeral=True)
+        await ctx.send_followup(content=msg, view=view, file=file, ephemeral=False)
     def __init__(self, bot):
         self.cooldown=[]
         self.bot = bot
