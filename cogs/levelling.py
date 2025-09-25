@@ -42,6 +42,231 @@ class Themes(discord.ui.Button):
         await interaction.response.send_message(f"Changed your theme to {self.label}!",ephemeral=True)
 
 class levelling(commands.Cog):
+    @slash_command(guild_ids=[767591734841835540], description="Test combined theme command (admin only)")
+    @discord.default_permissions(administrator=True)
+    async def theme_test(self, ctx):
+        """
+        Combined theme command for testing: shows rank cards, current level, and theme/overlay buttons.
+        Only available to admins for testing.
+        """
+        # Send the rank cards image (ephemeral)
+        await ctx.respond(file=discord.File('cogs/assests/Rank_Cards.png'), ephemeral=True)
+
+        # Fetch user XP and theme info
+        sql = 'SELECT * FROM levelling'
+        self.query.execute(sql)
+        myresult = self.query.fetchall()
+        lb1 = {}
+        theme = 1
+        overlay = "True"
+        for x in myresult:
+            a = str(x)
+            y = ast.literal_eval(a)
+            lb1[y[0]] = int(y[1])
+            if y[0] == ctx.author.id:
+                theme = y[2]
+                overlay = y[3]
+        xp = int(lb1.get(ctx.author.id, 0))
+        level = int(0.2 * (math.sqrt(xp)))
+
+        # Compose level message
+        msg = f"Your current level: **{level}** | XP: **{xp}**\nSelect a theme or toggle overlay below."
+
+        # Theme requirements
+        theme_defs = [
+            (1, "Tech", 0),
+            (2, "Mint", 5),
+            (3, "Cosmos", 10),
+            (4, "Red Metal", 15),
+            (5, "City", 20),
+        ]
+
+        class ThemeTestView(discord.ui.View):
+            def __init__(self, user_id, current_theme, current_overlay, user_level, user_xp, ctx, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.user_id = user_id
+                self.current_theme = current_theme
+                self.current_overlay = current_overlay
+                self.user_level = user_level
+                self.user_xp = user_xp
+                self.ctx = ctx
+                # Add theme buttons
+                for tid, tname, treq in theme_defs:
+                    if user_level >= treq:
+                        style = discord.ButtonStyle.success if current_theme == tid else discord.ButtonStyle.danger
+                        disabled = False
+                    else:
+                        style = discord.ButtonStyle.secondary
+                        disabled = True
+                    self.add_item(self.ThemeButton(tid, tname, style, disabled, self))
+                # Overlay toggle button
+                overlay_style = discord.ButtonStyle.success if current_overlay == "True" else discord.ButtonStyle.danger
+                self.add_item(self.OverlayButton(current_overlay, overlay_style, self))
+
+            class ThemeButton(discord.ui.Button):
+                def __init__(self, theme_id, theme_name, style, disabled, parent_view):
+                    super().__init__(
+                        label=theme_name,
+                        style=style,
+                        custom_id=f"theme_{theme_id}",
+                        disabled=disabled
+                    )
+                    self.theme_id = theme_id
+                    self.parent_view = parent_view
+                async def callback(self, interaction: discord.Interaction):
+                    if interaction.user.id != self.parent_view.user_id:
+                        await interaction.response.send_message("You can't use this!", ephemeral=True)
+                        return
+                    # Update theme in DB
+                    sql = 'UPDATE "levelling" SET "theme" = %s WHERE "user"=%s'
+                    val = (self.theme_id, interaction.user.id)
+                    self.parent_view.ctx.cog.query.execute(sql, val)
+                    self.parent_view.ctx.cog.con.commit()
+                    # Update view state
+                    self.parent_view.current_theme = self.theme_id
+                    # Regenerate level card image
+                    file = await generate_level_card(
+                        interaction.user,
+                        self.parent_view.user_xp,
+                        self.parent_view.user_level,
+                        self.theme_id,
+                        self.parent_view.current_overlay
+                    )
+                    # Rebuild view
+                    new_view = ThemeTestView(
+                        self.parent_view.user_id,
+                        self.theme_id,
+                        self.parent_view.current_overlay,
+                        self.parent_view.user_level,
+                        self.parent_view.user_xp,
+                        self.parent_view.ctx
+                    )
+                    await interaction.response.edit_message(
+                        content=f"Theme changed to **{self.label}**!\nYour current level: **{self.parent_view.user_level}** | XP: **{self.parent_view.user_xp}**",
+                        view=new_view,
+                        attachments=[file]
+                    )
+
+            class OverlayButton(discord.ui.Button):
+                def __init__(self, overlay_state, style, parent_view):
+                    label = "Overlay: ON" if overlay_state == "True" else "Overlay: OFF"
+                    super().__init__(
+                        label=label,
+                        style=style,
+                        custom_id="overlay_toggle"
+                    )
+                    self.parent_view = parent_view
+                async def callback(self, interaction: discord.Interaction):
+                    if interaction.user.id != self.parent_view.user_id:
+                        await interaction.response.send_message("You can't use this!", ephemeral=True)
+                        return
+                    # Toggle overlay in DB
+                    new_state = "False" if self.parent_view.current_overlay == "True" else "True"
+                    sql = 'UPDATE "levelling" SET "overlay" = %s WHERE "user"=%s'
+                    val = (new_state, interaction.user.id)
+                    self.parent_view.ctx.cog.query.execute(sql, val)
+                    self.parent_view.ctx.cog.con.commit()
+                    # Update view state
+                    self.parent_view.current_overlay = new_state
+                    # Regenerate level card image
+                    file = await generate_level_card(
+                        interaction.user,
+                        self.parent_view.user_xp,
+                        self.parent_view.user_level,
+                        self.parent_view.current_theme,
+                        new_state
+                    )
+                    # Rebuild view
+                    overlay_style = discord.ButtonStyle.success if new_state == "True" else discord.ButtonStyle.danger
+                    new_view = ThemeTestView(
+                        self.parent_view.user_id,
+                        self.parent_view.current_theme,
+                        new_state,
+                        self.parent_view.user_level,
+                        self.parent_view.user_xp,
+                        self.parent_view.ctx
+                    )
+                    await interaction.response.edit_message(
+                        content=f"Overlay toggled to **{'ON' if new_state == 'True' else 'OFF'}**.\nYour current level: **{self.parent_view.user_level}** | XP: **{self.parent_view.user_xp}**",
+                        view=new_view,
+                        attachments=[file]
+                    )
+
+        # Helper to generate the level card image (like /level)
+        async def generate_level_card(user, xp, level, theme, overlay_option):
+            # This logic is adapted from the level command
+            from easy_pil import Editor, Canvas, load_image_async
+            from PIL import Image, ImageFont, ImageDraw
+            import io
+            # Theme backgrounds/colors
+            backgrounds = {
+                1: ("cogs/assests/background1.png", '#17F3F6', "cogs/assests/overlay1.png", '#ffffff'),
+                2: ("cogs/assests/background2.png", '#ff1f97', "cogs/assests/overlay1.png", '#11ebf2'),
+                3: ("cogs/assests/background3.png", '#ff1f97', "cogs/assests/overlay1.png", '#11ebf2'),
+                4: ("cogs/assests/background4.png", '#ff5145', "cogs/assests/overlay1.png", '#11ebf2'),
+                5: ("cogs/assests/background5.png", '#ff1f97', "cogs/assests/overlay2.png", '#11ebf2'),
+            }
+            bg_path, bcolor, overlay_path, name_color = backgrounds.get(theme, backgrounds[1])
+            background = Editor(bg_path)
+            overlay = Editor(overlay_path)
+            avatar = await load_image_async(str(user.display_avatar.url))
+            avatar = Editor(avatar).resize((177, 177)).circle_image()
+            overlay = Editor(overlay).resize((230, 230))
+            square = Canvas((500, 500), "#06FFBF")
+            square = Editor(square)
+            square.rotate(30, expand=True)
+            background.paste(square.image, (600, -250))
+            background.paste(avatar.image, (38, 40))
+            if overlay_option == "True":
+                background.paste(overlay.image, (10, 15))
+            background.rectangle((265, 210), width=710, height=30, fill="white", radius=20)
+            # Progress bar
+            if level == 0:
+                interval_1 = 0
+                interval_2 = (int((level + 1) * 5) ** 2)
+                percentage = (xp / 75) * 100
+            else:
+                interval_1 = (int((level) * 5) ** 2)
+                interval_2 = (int((level + 1) / 0.2) ** 2)
+                xp_diff = (int((level + 1) * 5) ** 2) - (int((level) / 0.2) ** 2)
+                percentage = ((xp - interval_1) / xp_diff) * 100
+            background.bar((265, 210), max_width=710, height=30, percentage=percentage, fill="#FF4242", radius=20)
+            background.rectangle((240, 20), width=5, height=211, fill=bcolor)
+            background = Image.open(background.image_bytes)
+            draw = ImageDraw.Draw(background)
+            big_font = ImageFont.FreeTypeFont("cogs/assests/ABeeZee-Regular.otf", 60)
+            xp_font = ImageFont.FreeTypeFont("cogs/assests/LemonMilk.ttf", 25)
+            small_font = ImageFont.FreeTypeFont("cogs/assests/ABeeZee-Regular.otf", 30)
+            name_font = ImageFont.FreeTypeFont("cogs/assests/seguiemj.ttf", 35)
+            # Level, rank, XP text
+            text_size = draw.textsize(str(level), font=big_font)
+            offset_x = 1000 - 15 - text_size[0]
+            offset_y = 10
+            draw.text((offset_x, offset_y), str(level), font=big_font, fill="#11ebf2")
+            text_size = draw.textsize("LEVEL", font=small_font)
+            offset_x -= text_size[0] + 5
+            draw.text((offset_x, offset_y + 27), "LEVEL", font=small_font, fill="#11ebf2")
+            text_size = draw.textsize(f"/ {human_format(interval_2)} XP", font=small_font)
+            offset_x = 980 - text_size[0]
+            offset_y = 210 - text_size[1] - 10
+            draw.text((offset_x, offset_y), f"/ {human_format(interval_2)} XP", font=xp_font, fill="#727175")
+            text_size = draw.textsize(f"{human_format(xp)}", font=xp_font)
+            offset_x -= text_size[0] + 8
+            draw.text((offset_x, offset_y), f"{human_format(xp)}", font=xp_font, fill="#fff")
+            text_size = draw.textsize(user.name, font=name_font)
+            offset_x = 265
+            offset_y = 210 - text_size[1] - 5
+            draw.text((offset_x, offset_y), user.name, font=name_font, fill='#FF4242', stroke_width=1, stroke_fill='#FF4242')
+            with io.BytesIO() as image_binary:
+                background.save(image_binary, 'PNG')
+                image_binary.seek(0)
+                return discord.File(fp=image_binary, filename='Level.png')
+
+        # Attach context to view for DB access
+        view = ThemeTestView(ctx.author.id, theme, overlay, level, xp, ctx)
+        # Generate initial level card image
+        file = await generate_level_card(ctx.author, xp, level, theme, overlay)
+        await ctx.send_followup(content=msg, view=view, file=file, ephemeral=True)
     def __init__(self, bot):
         self.cooldown=[]
         self.bot = bot
