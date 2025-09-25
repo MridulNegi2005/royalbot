@@ -32,6 +32,6 @@ google
 python-dotenv
 gunicorn
 heroku3
-git+https://github.com/ytdl-org/youtube-dl
+yt-dlp
 git+https://github.com/Pycord-Development/pycord
 git+https://github.com/007Gamerx/cosmic-bot-music

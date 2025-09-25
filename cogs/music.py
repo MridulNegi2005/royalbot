@@ -52,16 +52,29 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
     async def on_play(self, ctx, player):
         if player.requester==None:
             requester = "Autoplay"
-        else: requester=player.requester.mention
-        yt = YoutubeDL(player.url)
-        embed=discord.Embed(title="<:play:918874928219050094> Now Playing",description=f"**{player.title}**",color=0xfa0a12)
-        embed.set_thumbnail(url=yt.thumbnail_url)
-        embed.add_field(name="Duration:",value=f"{convert(int(player.duration))}",inline=True)
-        embed.add_field(name="Requested By:",value=f"{requester}",inline=True)
-        embed.add_field(name="URL",value=f"[Click Here]({player.url})",inline=True)
-        embed.add_field(name="Uploaded By:",value=f"[{yt.author}]({yt.channel_url})",inline=True)
-        #embed.add_field(name="\u200b",value=f"<:views:918875283526942790> {convert2(int(yt.views))}")
-        embed.set_footer(text=f"Music By Cosmic Bot",icon_url="https://i.ibb.co/fNkh1QD/avatr.png")
+        else:
+            requester = player.requester.mention
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'noplaylist': True,
+            'quiet': True,
+            'nocheckcertificate': True,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+        }
+        with YoutubeDL(ydl_opts) as yt:
+            info = yt.extract_info(player.url, download=False)
+            thumbnail_url = info.get('thumbnail')
+            author = info.get('uploader')
+            channel_url = info.get('uploader_url')
+        embed = discord.Embed(title="<:play:918874928219050094> Now Playing", description=f"**{player.title}**", color=0xfa0a12)
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        embed.add_field(name="Duration:", value=f"{convert(int(player.duration))}", inline=True)
+        embed.add_field(name="Requested By:", value=f"{requester}", inline=True)
+        embed.add_field(name="URL", value=f"[Click Here]({player.url})", inline=True)
+        if author and channel_url:
+            embed.add_field(name="Uploaded By:", value=f"[{author}]({channel_url})", inline=True)
+        embed.set_footer(text=f"Music By Cosmic Bot", icon_url="https://i.ibb.co/fNkh1QD/avatr.png")
         await ctx.respond(embed=embed)
 
     
@@ -81,7 +94,6 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
 
     @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Gives information about currently playing song!")
     async def now_playing(self, ctx):
-        
         if player := await self.MusicManager.now_playing(ctx):
             if queue := await self.MusicManager.get_queue(ctx):
                 loop = queue.loop
@@ -92,23 +104,39 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
                     loop_status = "Queue Loop Enabled."
                 elif loop == discordSuperUtils.Loops.NO_LOOP:
                     loop_status = "Disabled"
-            if player.requester==None:
+            if player.requester == None:
                 requester = "Autoplay"
-            else: requester=player.requester.mention
-            yt = YoutubeDL(player.url)
+            else:
+                requester = player.requester.mention
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'noplaylist': True,
+                'quiet': True,
+                'nocheckcertificate': True,
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+            }
+            with YoutubeDL(ydl_opts) as yt:
+                info = yt.extract_info(player.url, download=False)
+                thumbnail_url = info.get('thumbnail')
+                author = info.get('uploader')
+                channel_url = info.get('uploader_url')
+                views = info.get('view_count')
             played = await self.MusicManager.get_player_played_duration(ctx, player)
-            embed=discord.Embed(title="<:play:918874928219050094> Now Playing",description=f"**{player.data['title']}**",color=0xfa0a12)
-            embed.set_thumbnail(url=yt.thumbnail_url)
-            embed.set_author(name=ctx.author.display_name,icon_url=ctx.author.avatar.url)
-            embed.add_field(name="Played:",value=f"{convert(played)}",inline=True)
-            embed.add_field(name="Duration:",value=f"{convert(int(player.duration))}",inline=True)
-            embed.add_field(name="Looping:",value=f"{loop_status}",inline=True)
-            embed.add_field(name="Requested By:",value=f"{player.requester.mention}",inline=True)
-            embed.add_field(name="URL",value=f"[Click Here]({player.url})",inline=True)
-            embed.add_field(name="Uploaded By:",value=f"[{yt.author}]({yt.channel_url})",inline=True)
-            embed.add_field(name="\u200b",value=f"<:views:918875283526942790> {convert2(int(yt.views))}")
+            embed = discord.Embed(title="<:play:918874928219050094> Now Playing", description=f"**{player.data['title']}**", color=0xfa0a12)
+            if thumbnail_url:
+                embed.set_thumbnail(url=thumbnail_url)
+            embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
+            embed.add_field(name="Played:", value=f"{convert(played)}", inline=True)
+            embed.add_field(name="Duration:", value=f"{convert(int(player.duration))}", inline=True)
+            embed.add_field(name="Looping:", value=f"{loop_status}", inline=True)
+            embed.add_field(name="Requested By:", value=f"{requester}", inline=True)
+            embed.add_field(name="URL", value=f"[Click Here]({player.url})", inline=True)
+            if author and channel_url:
+                embed.add_field(name="Uploaded By:", value=f"[{author}]({channel_url})", inline=True)
+            if views:
+                embed.add_field(name="\u200b", value=f"<:views:918875283526942790> {convert2(int(views))}")
             embed.set_image(url=f"https://i.imgur.com/ufxvZ0j.gif")
-            embed.set_footer(text=f"Music By Cosmic Bot",icon_url="https://media.discordapp.net/attachments/780650657811267595/835143738749616178/PicsArt_04-23-06.53.52.jpg")
+            embed.set_footer(text=f"Music By Cosmic Bot", icon_url="https://media.discordapp.net/attachments/780650657811267595/835143738749616178/PicsArt_04-23-06.53.52.jpg")
             await ctx.respond(embed=embed)
     @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Joins the VC you are currently in.")
     async def join(self, ctx):
