@@ -42,9 +42,8 @@ class Themes(discord.ui.Button):
         await interaction.response.send_message(f"Changed your theme to {self.label}!",ephemeral=True)
 
 class levelling(commands.Cog):
-    @slash_command(guild_ids=[767591734841835540], description="Test combined theme command (admin only)")
-    @discord.default_permissions(administrator=True)
-    async def theme_test(self, ctx):
+    @slash_command(guild_ids=[767591734841835540], description="Set your theme for level card!")
+    async def theme(self, ctx):
         """
         Combined theme command for testing: shows rank cards, current level, and theme/overlay buttons.
         Only available to admins for testing.
@@ -302,7 +301,7 @@ class levelling(commands.Cog):
                         22500 : 772357373771382794,
                         40000 : 772665309021995018,
                         62500 : 805778791586070538}
-    theme = SlashCommandGroup("theme", "Themes related commands")
+    #theme = SlashCommandGroup("theme", "Themes related commands")
     class paginator(discord.ui.View):
         def __init__(self,ctx):
             self.counter=0
@@ -408,7 +407,7 @@ class levelling(commands.Cog):
         else:
             await ctx.respond(f"{user.mention} has no xp!")
 
-    @theme.command(description="List all the themes with their requirements.")
+    '''@theme.command(description="List all the themes with their requirements.")
     async def list(self,ctx):
         await ctx.respond(file=discord.File('cogs/assests/Rank_Cards.png'),ephemeral=True)
 
@@ -452,7 +451,7 @@ class levelling(commands.Cog):
         sql = 'UPDATE "levelling" SET "overlay" = %s where "user"=%s'
         val=(value,ctx.author.id)
         self.query.execute(sql,val)
-        self.con.commit()
+        self.con.commit()'''
     @slash_command(guild_ids=[767591734841835540],description="Check your level")
     async def level(self,ctx,user:Option(discord.Member,"Member whose rank you wanted to see",required=False,default=None)):
         await ctx.defer()
