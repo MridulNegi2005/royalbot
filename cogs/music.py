@@ -68,13 +68,18 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
             'noplaylist': True,
             'quiet': True,
             'nocheckcertificate': True,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+            'verbose': True
         }
-        with YoutubeDL(ydl_opts) as yt:
-            info = yt.extract_info(player.url, download=False)
-            thumbnail_url = info.get('thumbnail')
-            author = info.get('uploader')
-            channel_url = info.get('uploader_url')
+        try:
+            with YoutubeDL(ydl_opts) as yt:
+                info = yt.extract_info(player.url, download=False)
+                thumbnail_url = info.get('thumbnail')
+                author = info.get('uploader')
+                channel_url = info.get('uploader_url')
+        except Exception as e:
+            await ctx.send_followup(f"Download error: {str(e)}. Please make sure the video is public and available, and that yt-dlp is up to date.")
+            return
         embed = discord.Embed(title="<:play:918874928219050094> Now Playing", description=f"**{player.title}**", color=0xfa0a12)
         if thumbnail_url:
             embed.set_thumbnail(url=thumbnail_url)
@@ -122,14 +127,19 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
                 'noplaylist': True,
                 'quiet': True,
                 'nocheckcertificate': True,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
+                'verbose': True
             }
-            with YoutubeDL(ydl_opts) as yt:
-                info = yt.extract_info(player.url, download=False)
-                thumbnail_url = info.get('thumbnail')
-                author = info.get('uploader')
-                channel_url = info.get('uploader_url')
-                views = info.get('view_count')
+            try:
+                with YoutubeDL(ydl_opts) as yt:
+                    info = yt.extract_info(player.url, download=False)
+                    thumbnail_url = info.get('thumbnail')
+                    author = info.get('uploader')
+                    channel_url = info.get('uploader_url')
+                    views = info.get('view_count')
+            except Exception as e:
+                await ctx.send_followup(f"Download error: {str(e)}. Please make sure the video is public and available, and that yt-dlp is up to date.")
+                return
             played = await self.MusicManager.get_player_played_duration(ctx, player)
             embed = discord.Embed(title="<:play:918874928219050094> Now Playing", description=f"**{player.data['title']}**", color=0xfa0a12)
             if thumbnail_url:
