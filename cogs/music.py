@@ -33,20 +33,29 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
             raise commands.CommandError()
         else:raise error  # Add error handling here
     async def play_cmd(self, ctx, query):
+        await ctx.defer()  # Defer immediately to prevent timeout
+
+        join_message = None
         if not ctx.voice_client or not ctx.voice_client.is_connected():
             vc = await self.MusicManager.join(ctx)
-            await ctx.respond(f"<:call_connect:918875388527145091> Joined <#{vc.id}>")
-
-        await ctx.defer()  # Prevent interaction timeout
+            join_message = f"<:call_connect:918875388527145091> Joined <#{vc.id}>"
 
         async with ctx.typing():
             players = await self.MusicManager.create_player(query, ctx.author)
 
         if players:
             if await self.MusicManager.queue_add(players=players, ctx=ctx) and not await self.MusicManager.play(ctx):
-                await ctx.respond(f"{players[-1].title}\nAdded to queue")
+                msg = f"{players[-1].title}\nAdded to queue"
+            else:
+                msg = None
         else:
-            await ctx.respond("Query not found.")
+            msg = "Query not found."
+
+        # Send all responses as followups after deferring
+        if join_message:
+            await ctx.send_followup(join_message)
+        if msg:
+            await ctx.send_followup(msg)
             
     @discordSuperUtils.CogManager.event(discordSuperUtils.MusicManager)
     async def on_play(self, ctx, player):
