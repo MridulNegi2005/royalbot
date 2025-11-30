@@ -25,9 +25,10 @@ def get_connection():
         return psycopg2.connect(
             database="postgres",
             user="postgres",
-            password="cosmicbot",
+            password="CEBYsadMjKqaCJJjGbUYY2gf5UxF2fGxAhDrGcDD",
             host="35.223.191.80",
             port=5432,
+			sslmode="require"
         )
     except:
         return False
@@ -122,27 +123,37 @@ class Help(discord.ui.View):
 async def on_ready():
 	bot.load_extension("cogs.sub")
 	print('We have logged in as {0.user}'.format(bot))
-bot.load_extension("cogs.info")
-bot.load_extension("cogs.codeshock")
-#bot.load_extension("cogs.wikipedia")
-bot.load_extension("cogs.weather")
-bot.load_extension("cogs.eval")
-bot.load_extension("cogs.fake")
-bot.load_extension("cogs.highlight")
-bot.load_extension("cogs.music")
-bot.load_extension("cogs.perm")
-bot.load_extension("cogs.welcome")
-bot.load_extension("cogs.buttonrole")
-bot.load_extension("cogs.levelling")
-#bot.load_extension("cogs.christmas")
-bot.load_extension("cogs.moderation")
-bot.load_extension("cogs.afk")
-bot.load_extension("cogs.casino")
-bot.load_extension("cogs.role")
-bot.load_extension("cogs.gsearch")
-bot.load_extension("cogs.starboard")
-bot.load_extension("cogs.import")
-bot.load_extension("cogs.giveaway")
+import sys
+def try_load_extension(name):
+	try:
+		bot.load_extension(name)
+		print(f'[main.py] Loaded {name} successfully.', file=sys.stderr, flush=True)
+	except Exception as e:
+		print(f'[main.py] Failed to load {name}: {e}', file=sys.stderr, flush=True)
+		import traceback
+		traceback.print_exc()
+
+try_load_extension("cogs.info")
+try_load_extension("cogs.codeshock")
+#try_load_extension("cogs.wikipedia")
+try_load_extension("cogs.weather")
+try_load_extension("cogs.eval")
+try_load_extension("cogs.fake")
+try_load_extension("cogs.highlight")
+try_load_extension("cogs.music")
+try_load_extension("cogs.perm")
+try_load_extension("cogs.welcome")
+try_load_extension("cogs.buttonrole")
+try_load_extension("cogs.levelling")
+#try_load_extension("cogs.christmas")
+try_load_extension("cogs.moderation")
+try_load_extension("cogs.afk")
+try_load_extension("cogs.casino")
+try_load_extension("cogs.role")
+try_load_extension("cogs.gsearch")
+try_load_extension("cogs.starboard")
+try_load_extension("cogs.import")
+try_load_extension("cogs.giveaway")
 print('All cogs loaded!')
 @bot.slash_command(guild_ids=[767591734841835540],description="Check out the response time!")
 async def ping(ctx):

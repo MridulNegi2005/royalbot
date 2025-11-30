@@ -16,9 +16,10 @@ def get_connection():
         return psycopg2.connect(
             database="postgres",
             user="postgres",
-            password="cosmicbot",
+            password="CEBYsadMjKqaCJJjGbUYY2gf5UxF2fGxAhDrGcDD",
             host="35.223.191.80",
             port=5432,
+			sslmode="require"
         )
     except:
         return False
