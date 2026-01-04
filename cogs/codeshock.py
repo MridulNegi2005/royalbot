@@ -13,9 +13,11 @@ def get_connection():
             password="cosmicbot",
             host="35.223.191.80",
             port=5432,
+			sslmode="require"
         )
-    except:
-        return False
+    except Exception as e:
+        print(f"Failed to connect to database: {e}")
+        raise  # Re-raise so the actual error is visible
 con = get_connection()
 query = con.cursor()
 
