@@ -107,7 +107,7 @@ class sub(commands.Cog):
 
 	@tasks.loop(seconds=10.0)
 	async def temprole(self):
-		guild = self.guild
+		guild = self.bot.get_guild(767591734841835540)
 		try:
 			sql='SELECT * FROM gconfig'
 			query.execute(sql)
