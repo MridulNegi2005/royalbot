@@ -65,7 +65,7 @@ class Gsearch(commands.Cog):
             self.next.disabled=True
             await interaction.response.edit_message(content=self.lb[-1],view=self)
 
-    @slash_command(guild_ids=[767591734841835540],description="Search google!")
+    @slash_command(description="Search google!")
     async def search(self,ctx,query:Option(str,"The query you want to search.")):
         results = search2(query,stop=10)
         result=[]

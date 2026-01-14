@@ -9,7 +9,7 @@ class Weather(commands.Cog):
   def __init__(self,bot):
     self.bot = bot
 
-  @slash_command(guild_ids=[767591734841835540],description="Check weather of a particular City/State/Country")
+  @slash_command(description="Check weather of a particular City/State/Country")
   async def weather(self,ctx, city:Option(str,"Region Name")):
     city_name = city
     complete_url = base_url + "appid=" + api_key + "&q=" + city_name
@@ -23,8 +23,10 @@ class Weather(commands.Cog):
       current_humidity = y["humidity"]
       z = x["weather"]
       weather_description = z[0]["description"]
+      # Use bot's role color in server, fallback to blue in DMs
+      color = ctx.guild.me.top_role.color if ctx.guild else discord.Color.blue()
       embed = discord.Embed(title=f"Weather in {city_name}",
-                            color=ctx.guild.me.top_role.color,)
+                            color=color,)
       embed.add_field(name="Descripition", value=f"**{weather_description}**", inline=False)
       embed.add_field(name="Temperature(C)", value=f"**{current_temperature_celsiuis}°C**", inline=False)
       embed.add_field(name="Humidity(%)", value=f"**{current_humidity}%**", inline=False)

@@ -191,15 +191,21 @@ async def enlarge(ctx, emoji:discord.PartialEmoji):
 	except:
 		await ctx.respond(f"Couldn't convert {emoji} to emoji")
 '''
-@bot.slash_command(guild_ids=[767591734841835540],description="Shows yours or another user's banner!")
-async def avatar(ctx,user:Option(discord.Member,"User whose avatar you want to enlarge",required=False,default=None),guild_avatar:Option(str,"Choose if to display guild specific avatar",choices=["True","False"],default=False,required=False)):
+@bot.slash_command(description="Shows yours or another user's avatar!")
+async def avatar(ctx,user:Option(discord.User,"User whose avatar you want to enlarge",required=False,default=None),guild_avatar:Option(str,"Choose if to display guild specific avatar (only works in servers)",choices=["True","False"],default=False,required=False)):
 	if user==None:user=ctx.author
-	if guild_avatar =="True":
+	if guild_avatar =="True" and ctx.guild:
 		try:
-			avatar = user.guild_avatar.url
+			# Try to get the member object for guild avatar
+			member = ctx.guild.get_member(user.id)
+			if member and member.guild_avatar:
+				avatar = member.guild_avatar.url
+			else:
+				avatar = user.display_avatar.url
 		except:
-			avatar = user.avatar.url
-	else:avatar = user.avatar.url
+			avatar = user.display_avatar.url
+	else:
+		avatar = user.display_avatar.url
 	await ctx.respond(avatar)
 @bot.command()
 @commands.has_role('LFG')
@@ -212,7 +218,7 @@ async def lfg(ctx,*, msg="Somebody wants to play?"):
 		msg = await ctx.send("You can use this command only in <#767591735559716910>")
 
 
-@bot.slash_command(guild_ids=[767591734841835540],description="Get inspired!")
+@bot.slash_command(description="Get inspired!")
 async def quote(ctx):
 	msg = get_quote()
 	embed = discord.Embed(title="QUOTE", description=msg, color=0x6a23a1)
