@@ -133,7 +133,11 @@ class highlight(commands.Cog):
                     ctx = await self.bot.get_context(message)
                     if ctx.prefix is not None:
                         continue
-                    await usr.send(f'In **{message.guild.name}** <#{message.channel.id}>, you were mentioned with the highlighted word "{k}"', embed=e)     
+                    try:
+                        await usr.send(f'In **{message.guild.name}** <#{message.channel.id}>, you were mentioned with the highlighted word "{k}"', embed=e)
+                    except discord.Forbidden:
+                        # User has DMs disabled or has blocked the bot - silently skip
+                        pass     
     @Cog.listener("on_reaction_add")
     async def on_reaction_add(self,reaction,user):
         self.last_seen[user.id]=datetime.datetime.utcnow()
