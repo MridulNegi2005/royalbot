@@ -164,17 +164,99 @@ async def ping(ctx):
 async def invite(ctx):
     await ctx.respond("Thanks for using this bot! You can invite it from link below!",view=invite2())
     
-@bot.slash_command(guild_ids=[767591734841835540],description="Load an extension",default_permission=False)
-@discord.default_permissions(administrator=True,)
-async def load(ctx,name):
-	bot.load_extension(f"cogs.{name}")
-	await ctx.respond("Extension enabled!")
+def get_all_cog_names():
+	"""Get all cog file names from the cogs/ directory."""
+	cog_names = []
+	cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
+	for f in os.listdir(cogs_dir):
+		if f.endswith(".py") and not f.startswith("_"):
+			cog_names.append(f[:-3])  # strip .py
+	cog_names.sort()
+	return cog_names
 
-@bot.slash_command(guild_ids=[767591734841835540],description="Unload an extesion",default_permission=False)
-@discord.default_permissions(administrator=True,)
-async def unload(ctx,name):
-	bot.unload_extension(f"cogs.{name}")
-	await ctx.respond("Extension disabled!")
+def is_cog_loaded(cog_name):
+	"""Check if a cog is currently loaded."""
+	return f"cogs.{cog_name}" in bot.extensions
+
+class CogActionView(discord.ui.View):
+	"""Buttons to Load / Unload / Reload a selected cog."""
+	def __init__(self, cog_name):
+		super().__init__(timeout=60)
+		self.cog_name = cog_name
+
+	@discord.ui.button(label="Load", style=discord.ButtonStyle.green, emoji="📥")
+	async def load_button(self, button, interaction):
+		ext = f"cogs.{self.cog_name}"
+		if ext in bot.extensions:
+			await interaction.response.send_message(f"⚠️ `{self.cog_name}` is already loaded.", ephemeral=True)
+			return
+		try:
+			bot.load_extension(ext)
+			await interaction.response.send_message(f"✅ Loaded `{self.cog_name}` successfully!", ephemeral=True)
+		except Exception as e:
+			await interaction.response.send_message(f"❌ Failed to load `{self.cog_name}`:\n```{e}```", ephemeral=True)
+
+	@discord.ui.button(label="Unload", style=discord.ButtonStyle.red, emoji="📤")
+	async def unload_button(self, button, interaction):
+		ext = f"cogs.{self.cog_name}"
+		if ext not in bot.extensions:
+			await interaction.response.send_message(f"⚠️ `{self.cog_name}` is not loaded.", ephemeral=True)
+			return
+		try:
+			bot.unload_extension(ext)
+			await interaction.response.send_message(f"✅ Unloaded `{self.cog_name}` successfully!", ephemeral=True)
+		except Exception as e:
+			await interaction.response.send_message(f"❌ Failed to unload `{self.cog_name}`:\n```{e}```", ephemeral=True)
+
+	@discord.ui.button(label="Reload", style=discord.ButtonStyle.blurple, emoji="🔄")
+	async def reload_button(self, button, interaction):
+		ext = f"cogs.{self.cog_name}"
+		try:
+			if ext in bot.extensions:
+				bot.unload_extension(ext)
+			bot.load_extension(ext)
+			await interaction.response.send_message(f"✅ Reloaded `{self.cog_name}` successfully!", ephemeral=True)
+		except Exception as e:
+			await interaction.response.send_message(f"❌ Failed to reload `{self.cog_name}`:\n```{e}```", ephemeral=True)
+
+class CogSelect(discord.ui.Select):
+	"""Dropdown that lists all available cogs with their load status."""
+	def __init__(self):
+		cog_names = get_all_cog_names()
+		options = []
+		for name in cog_names[:25]:  # Discord limit: 25 options
+			status = "✅ Loaded" if is_cog_loaded(name) else "❌ Not loaded"
+			options.append(discord.SelectOption(label=name, description=status, emoji="🔧"))
+		super().__init__(placeholder="Select a cog to manage...", min_values=1, max_values=1, options=options)
+
+	async def callback(self, interaction: discord.Interaction):
+		selected_cog = self.values[0]
+		status = "✅ **Loaded**" if is_cog_loaded(selected_cog) else "❌ **Not loaded**"
+		embed = discord.Embed(
+			title=f"🔧 Manage Cog: `{selected_cog}`",
+			description=f"Current status: {status}\n\nChoose an action below:",
+			color=discord.Color.blurple()
+		)
+		await interaction.response.send_message(embed=embed, view=CogActionView(selected_cog), ephemeral=True)
+
+class CogManageView(discord.ui.View):
+	"""View containing the cog selection dropdown."""
+	def __init__(self):
+		super().__init__(timeout=120)
+		self.add_item(CogSelect())
+
+@bot.slash_command(guild_ids=[767591734841835540], description="Manage bot extensions (load/unload/reload)", default_permission=False)
+@discord.default_permissions(administrator=True)
+async def cogs(ctx):
+	cog_names = get_all_cog_names()
+	loaded = [n for n in cog_names if is_cog_loaded(n)]
+	embed = discord.Embed(
+		title="⚙️ Cog Manager",
+		description=f"**{len(loaded)}** / **{len(cog_names)}** cogs loaded.\n\nSelect a cog from the dropdown below to manage it.",
+		color=discord.Color.blurple()
+	)
+	await ctx.respond(embed=embed, view=CogManageView(), ephemeral=True)
+
 @bot.slash_command(guild_ids=[767591734841835540],description="Restart Bot",default_permission=False)
 @discord.default_permissions(administrator=True,)
 async def restart(ctx):
