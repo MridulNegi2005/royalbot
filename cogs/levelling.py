@@ -5,7 +5,7 @@ from discord.ext import commands
 from discord.ext.commands.cog import Cog
 import asyncio
 import time
-import psycopg2
+import aiopg
 import datetime
 import ast
 import random
@@ -14,7 +14,9 @@ from PIL import Image, ImageFont, ImageDraw, ImageFilter,ImageOps
 import numpy as np
 import io,requests
 from easy_pil import Editor, Canvas, load_image_async, Font,Text
-from main import query,con
+
+# ─── DATABASE CONFIG ─────────────────────────────────────────
+DSN = "dbname=postgres user=postgres password=CEBYsadMjKqaCJJjGbUYY2gf5UxF2fGxAhDrGcDD host=35.223.191.80 port=5432 sslmode=require"
 """
 625 : Trophy Road Brawler
 2500 : Rare Brawler
@@ -25,21 +27,23 @@ from main import query,con
 62500 : Chromatic Brawler"""
 
 class Themes(discord.ui.Button):
-    def __init__(self,user,name,id,query,con):
+    def __init__(self,user,name,id,cog):
         self.user=user
-        self.query=query
-        self.con=con
+        self.cog=cog
         super().__init__(
             label=name,
             style=discord.enums.ButtonStyle.blurple,
             custom_id=id
         )
     async def callback(self,interaction: discord.Interaction):
-        sql = 'UPDATE "levelling" SET "theme" = %s where "user"=%s'
-        val=(int(self.custom_id),self.user.id)
-        self.query.execute(sql,val)
-        self.con.commit()
-        await interaction.response.send_message(f"Changed your theme to {self.label}!",ephemeral=True)
+        try:
+            await self.cog._db_execute(
+                'UPDATE "levelling" SET "theme" = %s where "user"=%s',
+                (int(self.custom_id), self.user.id)
+            )
+            await interaction.response.send_message(f"Changed your theme to {self.label}!",ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"Error updating theme: {e}",ephemeral=True)
 
 class levelling(commands.Cog):
     @slash_command(guild_ids=[767591734841835540], description="Set your theme for level card!")
@@ -52,9 +56,11 @@ class levelling(commands.Cog):
         await ctx.respond(file=discord.File('cogs/assests/Rank_Cards.png'), ephemeral=False)
 
         # Fetch user XP and theme info
-        sql = 'SELECT * FROM levelling'
-        self.query.execute(sql)
-        myresult = self.query.fetchall()
+        try:
+            myresult = await self._db_fetchall('SELECT * FROM levelling')
+        except Exception as e:
+            await ctx.send_followup(f"Database error: {e}")
+            return
         lb1 = {}
         theme = 1
         overlay = "True"
@@ -117,10 +123,14 @@ class levelling(commands.Cog):
                         await interaction.response.send_message("You can't use this!", ephemeral=True)
                         return
                     # Update theme in DB
-                    sql = 'UPDATE "levelling" SET "theme" = %s WHERE "user"=%s'
-                    val = (self.theme_id, interaction.user.id)
-                    self.parent_view.ctx.cog.query.execute(sql, val)
-                    self.parent_view.ctx.cog.con.commit()
+                    try:
+                        await self.parent_view.ctx.cog._db_execute(
+                            'UPDATE "levelling" SET "theme" = %s WHERE "user"=%s',
+                            (self.theme_id, interaction.user.id)
+                        )
+                    except Exception as e:
+                        await interaction.response.send_message(f"DB error: {e}", ephemeral=True)
+                        return
                     # Update view state
                     self.parent_view.current_theme = self.theme_id
                     # Regenerate level card image
@@ -167,10 +177,14 @@ class levelling(commands.Cog):
                         return
                     # Toggle overlay in DB
                     new_state = "False" if self.parent_view.current_overlay == "True" else "True"
-                    sql = 'UPDATE "levelling" SET "overlay" = %s WHERE "user"=%s'
-                    val = (new_state, interaction.user.id)
-                    self.parent_view.ctx.cog.query.execute(sql, val)
-                    self.parent_view.ctx.cog.con.commit()
+                    try:
+                        await self.parent_view.ctx.cog._db_execute(
+                            'UPDATE "levelling" SET "overlay" = %s WHERE "user"=%s',
+                            (new_state, interaction.user.id)
+                        )
+                    except Exception as e:
+                        await interaction.response.send_message(f"DB error: {e}", ephemeral=True)
+                        return
                     # Update view state
                     self.parent_view.current_overlay = new_state
                     # Regenerate level card image
@@ -281,8 +295,7 @@ class levelling(commands.Cog):
     def __init__(self, bot):
         self.cooldown=[]
         self.bot = bot
-        self.con = con#psycopg2.connect('postgres://balxuonbzytruy:2be081d80c21d0869d500f997e19ff385ad5278d020402608fc23ac1f8d71bc6@ec2-52-73-184-24.compute-1.amazonaws.com:5432/des0u9rjq76pq', sslmode='require')
-        self.query = query#self.con.cursor()
+        self.pool = None  # aiopg connection pool, created in _ensure_pool
         self.background=None
         self.bcolor = ''
         self.overlay = None
@@ -301,6 +314,48 @@ class levelling(commands.Cog):
                         22500 : 772357373771382794,
                         40000 : 772665309021995018,
                         62500 : 805778791586070538}
+
+    # ─── DATABASE HELPERS (aiopg) ────────────────────────────
+
+    async def _ensure_pool(self):
+        """Create the connection pool if it doesn't exist or is closed."""
+        if self.pool is None or self.pool.closed:
+            self.pool = await aiopg.create_pool(DSN, minsize=1, maxsize=5)
+            print("[levelling] DB connection pool created.")
+
+    async def _db_execute(self, sql, params=None):
+        """Execute a query (INSERT/UPDATE/DELETE). Crash-proof."""
+        await self._ensure_pool()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(sql, params)
+
+    async def _db_fetchone(self, sql, params=None):
+        """Execute a query and return one row. Crash-proof."""
+        await self._ensure_pool()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(sql, params)
+                return await cur.fetchone()
+
+    async def _db_fetchall(self, sql, params=None):
+        """Execute a query and return all rows. Crash-proof."""
+        await self._ensure_pool()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(sql, params)
+                return await cur.fetchall()
+
+    def cog_unload(self):
+        """Clean up when cog is unloaded."""
+        if self.pool and not self.pool.closed:
+            self.pool.close()
+            print("[levelling] DB connection pool closed.")
+
+    @Cog.listener("on_ready")
+    async def on_ready(self):
+        """Create pool when bot is ready."""
+        await self._ensure_pool()
     #theme = SlashCommandGroup("theme", "Themes related commands")
     class paginator(discord.ui.View):
         def __init__(self,ctx):
@@ -365,47 +420,54 @@ class levelling(commands.Cog):
     @slash_command(guild_ids=[767591734841835540],default_permission=False)
     @discord.default_permissions(ban_members=True,)
     async def add_xp(self,ctx,user:Option(discord.Member,"User to give xp to"),xp:Option(int,"Amount of xp to be added")):
-        sql = 'SELECT "xp" FROM "levelling" where "user" =%s'
-        val=(user.id,)
-        self.query.execute(sql,val)
-        x = self.query.fetchall()
-        xp_gain = xp
-        if len(x)>0:
-            xp = x[0][0]
-            xp=xp+xp_gain
-            sql = 'UPDATE "levelling" SET "xp" = %s,"theme" = %s,"overlay"=%s where "user"=%s'
-            val=(xp,1,"True",user.id)
-            self.query.execute(sql,val)
-            self.con.commit()
-        else:
-            xp= xp_gain
-            sql = 'INSERT INTO "levelling" ("user","xp","theme","overlay") values (%s,%s,%s,%s)'
-            val=(user.id,xp,1,"True")
-            self.query.execute(sql,val)
-            self.con.commit()
-        await ctx.respond(f"Successfully added {xp_gain} xp to {user.mention}. He/She now has {xp} xp!")
+        try:
+            x = await self._db_fetchall(
+                'SELECT "xp" FROM "levelling" where "user" =%s',
+                (user.id,)
+            )
+            xp_gain = xp
+            if len(x)>0:
+                xp = x[0][0]
+                xp=xp+xp_gain
+                await self._db_execute(
+                    'UPDATE "levelling" SET "xp" = %s,"theme" = %s,"overlay"=%s where "user"=%s',
+                    (xp,1,"True",user.id)
+                )
+            else:
+                xp= xp_gain
+                await self._db_execute(
+                    'INSERT INTO "levelling" ("user","xp","theme","overlay") values (%s,%s,%s,%s)',
+                    (user.id,xp,1,"True")
+                )
+            await ctx.respond(f"Successfully added {xp_gain} xp to {user.mention}. He/She now has {xp} xp!")
+        except Exception as e:
+            await ctx.respond(f"Database error: {e}")
+
     @slash_command(guild_ids=[767591734841835540],default_permission=False)
     @discord.default_permissions(ban_members=True,)
     async def remove_xp(self,ctx,user:Option(discord.Member,"User to remove xp from"),xp:Option(int,"Amount of xp to be subtracted")):
-        sql = 'SELECT "xp" FROM "levelling" where "user" =%s'
-        val=(user.id,)
-        self.query.execute(sql,val)
-        x = self.query.fetchall()
-        xp_loss = xp
-        if len(x)>0:
-            xp = x[0][0]
-            if xp>xp_loss:
-                xp=xp-xp_loss
+        try:
+            x = await self._db_fetchall(
+                'SELECT "xp" FROM "levelling" where "user" =%s',
+                (user.id,)
+            )
+            xp_loss = xp
+            if len(x)>0:
+                xp = x[0][0]
+                if xp>xp_loss:
+                    xp=xp-xp_loss
+                else:
+                    xp_loss=xp
+                    xp=0
+                await self._db_execute(
+                    'UPDATE "levelling" SET "xp" = %s,"theme" = %s,"overlay"=%s where "user"=%s',
+                    (xp,1,"True",user.id)
+                )
+                await ctx.respond(f"Successfully removed {xp_loss} xp from {user.mention}. He/She now has {xp} xp!")
             else:
-                xp_loss=xp
-                xp=0
-            sql = 'UPDATE "levelling" SET "xp" = %s,"theme" = %s,"overlay"=%s where "user"=%s'
-            val=(xp,1,"True",user.id)
-            self.query.execute(sql,val)
-            self.con.commit()
-            await ctx.respond(f"Successfully removed {xp_loss} xp from {user.mention}. He/She now has {xp} xp!")
-        else:
-            await ctx.respond(f"{user.mention} has no xp!")
+                await ctx.respond(f"{user.mention} has no xp!")
+        except Exception as e:
+            await ctx.respond(f"Database error: {e}")
 
     '''@theme.command(description="List all the themes with their requirements.")
     async def list(self,ctx):
@@ -456,9 +518,11 @@ class levelling(commands.Cog):
     async def level(self,ctx,user:Option(discord.Member,"Member whose rank you wanted to see",required=False,default=None)):
         await ctx.defer()
         if user==None:user=ctx.author
-        sql = 'SELECT * FROM levelling'
-        self.query.execute(sql)
-        myresult = self.query.fetchall()
+        try:
+            myresult = await self._db_fetchall('SELECT * FROM levelling')
+        except Exception as e:
+            await ctx.send_followup(f"Database error: {e}")
+            return
         theme = 0
         self.overlay_option="False"
         for x in myresult:
@@ -601,9 +665,11 @@ class levelling(commands.Cog):
     @slash_command(guild_ids=[767591734841835540])
     async def leaderboard(self,ctx):
         await ctx.defer()
-        sql = 'SELECT * FROM levelling'
-        self.query.execute(sql)
-        myresult = self.query.fetchall()
+        try:
+            myresult = await self._db_fetchall('SELECT * FROM levelling')
+        except Exception as e:
+            await ctx.send_followup(f"Database error: {e}")
+            return
         for x in myresult:
             a = str(x)
             y = ast.literal_eval(a)
@@ -648,56 +714,59 @@ class levelling(commands.Cog):
             return
         if message.author.id not in self.cooldown:
             xp_gain = random.randint(4,8)
-            sql = 'SELECT "xp" FROM "levelling" where "user" =%s'
-            val=(message.author.id,)
-            self.query.execute(sql,val)
-            x = self.query.fetchall()
-            if len(x)>0:
-                xp = x[0][0]
-                level_before= int(0.2*(math.sqrt(xp)))
-                xp=xp+xp_gain
-                level_after= int(0.2*(math.sqrt(xp)))
-                sql = 'UPDATE "levelling" SET "xp" = %s where "user"=%s'
-                val=(xp,message.author.id)
-                self.query.execute(sql,val)
-                self.con.commit()
-                if level_after>level_before:
-                    await message.channel.send(f"Congratulations {message.author.mention},you just reached level {level_after} in this dead server! <:CS_zMilkSip:853199496674279455>")
-            else:
-                xp= xp_gain
-                sql = 'INSERT INTO "levelling" ("user","xp","theme","overlay") values (%s,%s,%s,%s)'
-                val=(message.author.id,xp,1,"True")
-                self.query.execute(sql,val)
-                self.con.commit()
-            for x in self.autorole.keys():
-                if xp > x:
-                    role = message.guild.get_role(self.autorole[x])
-                    roles=""
-                    counter=0
-                    if role not in message.author.roles:
-                        counter+=1
-                        await message.author.add_roles(role,reason="Level Up!")
-                        roles+=f"{role.name} "
-                    theme_unlock_msg = ""
-                    # Check for theme unlocks at new level thresholds
-                    new_level = int(0.2*(math.sqrt(xp)))
-                    theme_unlocks = []
-                    if new_level >= 20:
-                        theme_unlocks.append("City")
-                    elif new_level >= 15:
-                        theme_unlocks.append("Red Metal")
-                    elif new_level >= 10:
-                        theme_unlocks.append("Cosmos")
-                    elif new_level >= 5:
-                        theme_unlocks.append("Mint")
-                    elif new_level > 0:
-                        theme_unlocks.append("Tech")
-                    if theme_unlocks:
-                        theme_unlock_msg = f"You also unlocked the theme: {theme_unlocks[-1]}! Use /theme to select your new theme."
-                    if counter == 1:
-                        await message.channel.send(f"Congratulations dear {message.author.mention}, you achieved the role {roles}!\n{theme_unlock_msg}")
-                    elif counter > 1:
-                        await message.channel.send(f"Congratulations dear {message.author.mention}, you achieved the roles {roles}!{theme_unlock_msg}")
+            try:
+                x = await self._db_fetchall(
+                    'SELECT "xp" FROM "levelling" where "user" =%s',
+                    (message.author.id,)
+                )
+                if len(x)>0:
+                    xp = x[0][0]
+                    level_before= int(0.2*(math.sqrt(xp)))
+                    xp=xp+xp_gain
+                    level_after= int(0.2*(math.sqrt(xp)))
+                    await self._db_execute(
+                        'UPDATE "levelling" SET "xp" = %s where "user"=%s',
+                        (xp,message.author.id)
+                    )
+                    if level_after>level_before:
+                        await message.channel.send(f"Congratulations {message.author.mention},you just reached level {level_after} in this dead server! <:CS_zMilkSip:853199496674279455>")
+                else:
+                    xp= xp_gain
+                    await self._db_execute(
+                        'INSERT INTO "levelling" ("user","xp","theme","overlay") values (%s,%s,%s,%s)',
+                        (message.author.id,xp,1,"True")
+                    )
+                for x in self.autorole.keys():
+                    if xp > x:
+                        role = message.guild.get_role(self.autorole[x])
+                        roles=""
+                        counter=0
+                        if role not in message.author.roles:
+                            counter+=1
+                            await message.author.add_roles(role,reason="Level Up!")
+                            roles+=f"{role.name} "
+                        theme_unlock_msg = ""
+                        # Check for theme unlocks at new level thresholds
+                        new_level = int(0.2*(math.sqrt(xp)))
+                        theme_unlocks = []
+                        if new_level >= 20:
+                            theme_unlocks.append("City")
+                        elif new_level >= 15:
+                            theme_unlocks.append("Red Metal")
+                        elif new_level >= 10:
+                            theme_unlocks.append("Cosmos")
+                        elif new_level >= 5:
+                            theme_unlocks.append("Mint")
+                        elif new_level > 0:
+                            theme_unlocks.append("Tech")
+                        if theme_unlocks:
+                            theme_unlock_msg = f"You also unlocked the theme: {theme_unlocks[-1]}! Use /theme to select your new theme."
+                        if counter == 1:
+                            await message.channel.send(f"Congratulations dear {message.author.mention}, you achieved the role {roles}!\n{theme_unlock_msg}")
+                        elif counter > 1:
+                            await message.channel.send(f"Congratulations dear {message.author.mention}, you achieved the roles {roles}!{theme_unlock_msg}")
+            except Exception as e:
+                print(f"[levelling] DB error in on_message: {e}")
             self.cooldown.append(message.author.id)
             await asyncio.sleep(60)
             self.cooldown.remove(message.author.id)

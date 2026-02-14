@@ -347,7 +347,7 @@ class giveaway(commands.Cog):
                             val=(message.author.id,x[1],count)
                             self.query.execute(sql,val)
                             self.con.commit()
-
+            
 
 def converttime(time):
     ftime=0
