@@ -154,6 +154,7 @@ try_load_extension("cogs.gsearch")
 try_load_extension("cogs.starboard")
 try_load_extension("cogs.import")
 try_load_extension("cogs.giveaway")
+try_load_extension("cogs.vc_levelling")
 print('All cogs loaded!')
 @bot.slash_command(guild_ids=[767591734841835540],description="Check out the response time!")
 async def ping(ctx):
