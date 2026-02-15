@@ -246,7 +246,7 @@ class Music(commands.Cog, name="Music"):
             if not ctx.author.voice or not ctx.author.voice.channel:
                 await ctx.send_followup("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
                 return
-            vc = await ctx.author.voice.channel.connect(self_deaf=True)
+            vc = await ctx.author.voice.channel.connect()
             await ctx.send_followup(f"<:call_connect:918875388527145091> Joined <#{vc.channel.id}>")
 
         player = self._get_or_create_player(ctx)
