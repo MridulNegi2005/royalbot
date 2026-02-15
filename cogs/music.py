@@ -23,12 +23,6 @@ YDL_OPTIONS = {
     'extract_flat': False,
 }
 
-# FFmpeg options for streaming audio
-FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn',
-}
-
 
 class Song:
     """Represents a single song with its metadata."""
@@ -45,6 +39,26 @@ class Song:
         self.view_count = data.get('view_count', 0)
         self.requester = requester
         self._extracted_at = time.time()  # Track when the stream URL was extracted
+        # Store HTTP headers from yt_dlp — YouTube requires these to allow streaming
+        self.http_headers = data.get('http_headers', {})
+
+    def get_ffmpeg_options(self):
+        """Build FFmpeg options with the proper HTTP headers for this song."""
+        # Build -headers string from yt_dlp's http_headers
+        headers_str = ''
+        if self.http_headers:
+            for key, value in self.http_headers.items():
+                headers_str += f'{key}: {value}\r\n'
+
+        before_opts = '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
+        if headers_str:
+            # -headers must come before -i in FFmpeg
+            before_opts = f'-headers "{headers_str}" {before_opts}'
+
+        return {
+            'before_options': before_opts,
+            'options': '-vn',
+        }
 
     @classmethod
     async def from_query(cls, query: str, requester: discord.Member = None):
@@ -101,7 +115,7 @@ class Song:
             return self.stream_url
 
         debug(f"refresh_stream_url: RE-EXTRACTING (age={time.time() - self._extracted_at:.1f}s)")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         with YoutubeDL(YDL_OPTIONS) as ydl:
             data = await loop.run_in_executor(
                 None, functools.partial(ydl.extract_info, self.url, download=False)
@@ -109,6 +123,7 @@ class Song:
         if 'entries' in data:
             data = data['entries'][0]
         self.stream_url = data.get('url', '')
+        self.http_headers = data.get('http_headers', {})
         self._extracted_at = time.time()
         return self.stream_url
 
@@ -176,8 +191,10 @@ class MusicPlayer:
                 debug("_play_song: ABORT - not connected to voice!")
                 return
 
+            ffmpeg_opts = song.get_ffmpeg_options()
             debug(f"_play_song: Creating FFmpeg source, stream_url={song.stream_url[:80]}...")
-            source = discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTIONS)
+            debug(f"_play_song: FFmpeg headers present: {bool(song.http_headers)}, keys={list(song.http_headers.keys())}")
+            source = discord.FFmpegPCMAudio(song.stream_url, **ffmpeg_opts)
             source = discord.PCMVolumeTransformer(source, volume=self.volume)
 
             def after_callback(err):
