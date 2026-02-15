@@ -270,10 +270,53 @@ class Music(commands.Cog, name="Music"):
             if not ctx.author.voice or not ctx.author.voice.channel:
                 await ctx.send_followup("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
                 return
-            debug(f"play: connecting to VC {ctx.author.voice.channel.id}...")
-            vc = await ctx.author.voice.channel.connect()
-            debug(f"play: CONNECTED to VC, vc={vc}, is_connected={vc.is_connected()}")
-            await ctx.send_followup(f"<:call_connect:918875388527145091> Joined <#{vc.channel.id}>")
+
+            # Clean up any zombie voice client first
+            if ctx.voice_client:
+                debug("play: cleaning up zombie voice client...")
+                try:
+                    await ctx.voice_client.disconnect(force=True)
+                except Exception:
+                    pass
+
+            channel = ctx.author.voice.channel
+            vc = None
+            for attempt in range(3):
+                try:
+                    debug(f"play: connect attempt {attempt + 1} to VC {channel.id}...")
+                    vc = await asyncio.wait_for(channel.connect(), timeout=15)
+                    # Give the voice websocket a moment to fully establish
+                    await asyncio.sleep(1)
+                    debug(f"play: attempt {attempt + 1}: is_connected={vc.is_connected()}")
+                    if vc.is_connected():
+                        break
+                    else:
+                        debug(f"play: attempt {attempt + 1}: not connected, cleaning up...")
+                        try:
+                            await vc.disconnect(force=True)
+                        except Exception:
+                            pass
+                        vc = None
+                except asyncio.TimeoutError:
+                    debug(f"play: attempt {attempt + 1}: TIMED OUT after 15s")
+                    # Force cleanup of any partial connection
+                    if ctx.guild.voice_client:
+                        try:
+                            await ctx.guild.voice_client.disconnect(force=True)
+                        except Exception:
+                            pass
+                    vc = None
+                except Exception as e:
+                    debug(f"play: attempt {attempt + 1}: ERROR: {e}")
+                    vc = None
+
+            if not vc or not vc.is_connected():
+                debug("play: ALL connect attempts FAILED")
+                await ctx.send_followup("❌ Failed to connect to voice channel. Please try again.")
+                return
+
+            debug(f"play: CONNECTED to VC successfully")
+            await ctx.send_followup(f"<:call_connect:918875388527145091> Joined <#{channel.id}>")
 
         player = self._get_or_create_player(ctx)
         debug(f"play: got player, calling add_and_play...")
