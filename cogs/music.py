@@ -143,6 +143,7 @@ class MusicPlayer:
         self.queue_loop = False
         self.volume = 0.5
         self._play_lock = asyncio.Lock()
+        self._ytdlp_process = None
 
     async def play_next(self, error=None):
         """Callback invoked when the current song ends. Plays the next song."""
@@ -171,34 +172,51 @@ class MusicPlayer:
             self.current = None
 
     async def _play_song(self, song: Song):
-        """Actually play a song through the voice client."""
+        """Actually play a song through the voice client using yt-dlp pipe."""
         debug(f"_play_song: START for '{song.title}'")
         async with self._play_lock:
             self.current = song
-
-            try:
-                # Refresh the stream URL in case it expired
-                await song.refresh_stream_url()
-            except Exception as e:
-                debug(f"_play_song: refresh FAILED: {e}")
-                print(f"Failed to refresh stream URL: {e}")
-                # Try playing next
-                await self.play_next()
-                return
 
             debug(f"_play_song: voice_client={self.voice_client}, connected={self.voice_client.is_connected() if self.voice_client else 'N/A'}")
             if not self.voice_client or not self.voice_client.is_connected():
                 debug("_play_song: ABORT - not connected to voice!")
                 return
 
-            ffmpeg_opts = song.get_ffmpeg_options()
-            debug(f"_play_song: Creating FFmpeg source, stream_url={song.stream_url[:80]}...")
-            debug(f"_play_song: FFmpeg headers present: {bool(song.http_headers)}, keys={list(song.http_headers.keys())}")
-            source = discord.FFmpegPCMAudio(song.stream_url, **ffmpeg_opts)
+            # Use yt-dlp subprocess to pipe audio — bypasses YouTube IP blocking
+            # yt-dlp handles all HTTP auth/headers internally
+            ytdlp_cmd = [
+                'yt-dlp',
+                '-f', 'bestaudio',
+                '-o', '-',
+                '--quiet',
+                '--no-warnings',
+                song.url
+            ]
+            debug(f"_play_song: spawning yt-dlp subprocess for '{song.url}'")
+            try:
+                import subprocess
+                self._ytdlp_process = subprocess.Popen(
+                    ytdlp_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+            except Exception as e:
+                debug(f"_play_song: failed to spawn yt-dlp: {e}")
+                await self.play_next()
+                return
+
+            source = discord.FFmpegPCMAudio(self._ytdlp_process.stdout, pipe=True)
             source = discord.PCMVolumeTransformer(source, volume=self.volume)
 
             def after_callback(err):
                 debug(f"after_callback: song finished, err={err}")
+                # Kill yt-dlp process if still running
+                try:
+                    if self._ytdlp_process and self._ytdlp_process.poll() is None:
+                        self._ytdlp_process.kill()
+                        debug("after_callback: killed yt-dlp process")
+                except Exception:
+                    pass
                 # Schedule play_next on the event loop
                 fut = asyncio.run_coroutine_threadsafe(
                     self.play_next(err), self.bot.loop
@@ -209,7 +227,7 @@ class MusicPlayer:
                     print(f"Error in after callback: {e}")
 
             self.voice_client.play(source, after=after_callback)
-            debug(f"_play_song: voice_client.play() called - PLAYING NOW")
+            debug(f"_play_song: voice_client.play() called - PLAYING NOW via yt-dlp pipe")
 
     async def add_and_play(self, songs: list[Song]):
         """Add songs to the queue. If nothing is playing, start playback."""
