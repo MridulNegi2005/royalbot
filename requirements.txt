@@ -34,4 +34,3 @@ gunicorn
 heroku3
 yt-dlp
 git+https://github.com/Pycord-Development/pycord
-git+https://github.com/007Gamerx/cosmic-bot-music

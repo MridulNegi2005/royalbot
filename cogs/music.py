@@ -1,325 +1,502 @@
-import discordSuperUtils
-from discord.ext import commands
-from discordSuperUtils import MusicManager, PageManager
-from discord.commands import slash_command,SlashCommandGroup,permissions,Option
-import ffmpeg
 import discord
+from discord.ext import commands
+from discord.commands import slash_command, Option
 import asyncio
-import json
+import functools
 from yt_dlp import YoutubeDL
-class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
+
+
+# yt-dlp options for searching and extracting stream URLs (no download)
+YDL_OPTIONS = {
+    'format': 'bestaudio/best',
+    'noplaylist': True,
+    'quiet': True,
+    'no_warnings': True,
+    'nocheckcertificate': True,
+    'source_address': '0.0.0.0',
+    'default_search': 'ytsearch',
+    'extract_flat': False,
+}
+
+# FFmpeg options for streaming audio
+FFMPEG_OPTIONS = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn',
+}
+
+
+class Song:
+    """Represents a single song with its metadata."""
+
+    def __init__(self, data: dict, requester: discord.Member = None):
+        self.data = data
+        self.title = data.get('title', 'Unknown')
+        self.url = data.get('webpage_url', data.get('url', ''))
+        self.stream_url = data.get('url', '')
+        self.duration = data.get('duration', 0)
+        self.thumbnail = data.get('thumbnail', '')
+        self.uploader = data.get('uploader', '')
+        self.uploader_url = data.get('uploader_url', '')
+        self.view_count = data.get('view_count', 0)
+        self.requester = requester
+
+    @classmethod
+    async def from_query(cls, query: str, requester: discord.Member = None):
+        """Search and extract song info from a query string or URL."""
+        loop = asyncio.get_event_loop()
+        with YoutubeDL(YDL_OPTIONS) as ydl:
+            data = await loop.run_in_executor(
+                None, functools.partial(ydl.extract_info, query, download=False)
+            )
+
+        if 'entries' in data:
+            # Take the first search result
+            data = data['entries'][0]
+
+        return cls(data, requester)
+
+    @classmethod
+    async def from_query_list(cls, query: str, requester: discord.Member = None):
+        """Search and return a list of songs (handles playlists)."""
+        loop = asyncio.get_event_loop()
+
+        # First check if it's a playlist
+        playlist_opts = YDL_OPTIONS.copy()
+        playlist_opts['noplaylist'] = False
+
+        with YoutubeDL(playlist_opts) as ydl:
+            data = await loop.run_in_executor(
+                None, functools.partial(ydl.extract_info, query, download=False)
+            )
+
+        songs = []
+        if 'entries' in data:
+            for entry in data['entries']:
+                if entry:
+                    songs.append(cls(entry, requester))
+        else:
+            songs.append(cls(data, requester))
+
+        return songs
+
+    async def refresh_stream_url(self):
+        """Re-extract the stream URL (they expire)."""
+        loop = asyncio.get_event_loop()
+        with YoutubeDL(YDL_OPTIONS) as ydl:
+            data = await loop.run_in_executor(
+                None, functools.partial(ydl.extract_info, self.url, download=False)
+            )
+        if 'entries' in data:
+            data = data['entries'][0]
+        self.stream_url = data.get('url', '')
+        return self.stream_url
+
+
+class MusicPlayer:
+    """Per-guild music player managing the queue and playback."""
+
+    def __init__(self, ctx):
+        self.bot = ctx.bot
+        self.guild = ctx.guild
+        self.channel = ctx.channel
+        self.queue: list[Song] = []
+        self.history: list[Song] = []
+        self.current: Song | None = None
+        self.voice_client: discord.VoiceClient | None = ctx.voice_client
+        self.loop = False
+        self.queue_loop = False
+        self.volume = 0.5
+        self._play_lock = asyncio.Lock()
+
+    async def play_next(self, error=None):
+        """Callback invoked when the current song ends. Plays the next song."""
+        if error:
+            print(f"Player error: {error}")
+
+        # If looping current song, replay it
+        if self.loop and self.current:
+            await self._play_song(self.current)
+            return
+
+        # If queue looping, push current song to end of queue
+        if self.queue_loop and self.current:
+            self.queue.append(self.current)
+
+        # Add current song to history
+        if self.current:
+            self.history.append(self.current)
+
+        # Play next song in queue
+        if self.queue:
+            next_song = self.queue.pop(0)
+            await self._play_song(next_song)
+        else:
+            self.current = None
+
+    async def _play_song(self, song: Song):
+        """Actually play a song through the voice client."""
+        async with self._play_lock:
+            self.current = song
+
+            try:
+                # Refresh the stream URL in case it expired
+                await song.refresh_stream_url()
+            except Exception as e:
+                print(f"Failed to refresh stream URL: {e}")
+                # Try playing next
+                await self.play_next()
+                return
+
+            if not self.voice_client or not self.voice_client.is_connected():
+                return
+
+            source = discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTIONS)
+            source = discord.PCMVolumeTransformer(source, volume=self.volume)
+
+            def after_callback(err):
+                # Schedule play_next on the event loop
+                fut = asyncio.run_coroutine_threadsafe(
+                    self.play_next(err), self.bot.loop
+                )
+                try:
+                    fut.result()
+                except Exception as e:
+                    print(f"Error in after callback: {e}")
+
+            self.voice_client.play(source, after=after_callback)
+
+    async def add_and_play(self, songs: list[Song]):
+        """Add songs to the queue. If nothing is playing, start playback."""
+        if not songs:
+            return None
+
+        if self.current is None or (self.voice_client and not self.voice_client.is_playing() and not self.voice_client.is_paused()):
+            # Nothing playing => play the first song immediately, queue the rest
+            first = songs[0]
+            self.queue.extend(songs[1:])
+            await self._play_song(first)
+            return first
+        else:
+            # Something is playing => queue everything
+            self.queue.extend(songs)
+            return None  # indicates songs were queued, not immediately played
+
+    def clear(self):
+        self.queue.clear()
+        self.current = None
+        self.loop = False
+        self.queue_loop = False
+
+
+# Global dict of guild_id -> MusicPlayer
+players: dict[int, MusicPlayer] = {}
+
+
+def get_player(ctx) -> MusicPlayer | None:
+    return players.get(ctx.guild.id)
+
+
+class Music(commands.Cog, name="Music"):
     def __init__(self, bot):
         self.bot = bot
-        self.vote={}
         self.client_secret = "6ee356b084e445bbbf878dfa1f5c26fd"
         self.client_id = "7bff23b27d3244f28fcae1a938ab89b6"
-        self.MusicManager = MusicManager(self.bot,inactivity_timeout=None,spotify_support=True,client_id=self.client_id,client_secret=self.client_secret)
-        self.ImageManager = discordSuperUtils.ImageManager()
-        super().__init__()
 
-          
-    @discordSuperUtils.CogManager.event(discordSuperUtils.MusicManager)
-    async def on_music_error(self, ctx, error):
-        if isinstance(error, discordSuperUtils.NotPlaying):
-            await ctx.respond("No song is being played currently!")
-            raise error
-        elif isinstance(error, discordSuperUtils.SkipError):
-            await ctx.respond("This is the last song being played!")
-            raise error
-        elif isinstance(error, discordSuperUtils.QueueEmpty):
-            if ctx.command.name == 'leave':
-                return
-            await ctx.respond("Queue is Empty")
-            raise commands.CommandError()
-        else:raise error  # Add error handling here
-    async def play_cmd(self, ctx, query):
-        await ctx.defer()  # Defer immediately to prevent timeout
+    def _get_or_create_player(self, ctx) -> MusicPlayer:
+        if ctx.guild.id not in players:
+            players[ctx.guild.id] = MusicPlayer(ctx)
+        player = players[ctx.guild.id]
+        player.voice_client = ctx.voice_client
+        return player
 
-        join_message = None
+    # ─── Play ─────────────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Searches for the song and plays it if available.")
+    async def play(self, ctx, query: Option(str, "Song name or Song/Playlist link from YT or Spotify")):
+        await ctx.defer()
+
+        # Auto-join voice channel
         if not ctx.voice_client or not ctx.voice_client.is_connected():
-            vc = await self.MusicManager.join(ctx)
-            join_message = f"<:call_connect:918875388527145091> Joined <#{vc.id}>"
+            if not ctx.author.voice or not ctx.author.voice.channel:
+                await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
+                return
+            vc = await ctx.author.voice.channel.connect()
+            await ctx.send_followup(f"<:call_connect:918875388527145091> Joined <#{vc.channel.id}>")
 
-        async with ctx.typing():
-            players = await self.MusicManager.create_player(query, ctx.author)
+        player = self._get_or_create_player(ctx)
 
-        if players:
-            if await self.MusicManager.queue_add(players=players, ctx=ctx) and not await self.MusicManager.play(ctx):
-                msg = f"{players[-1].title}\nAdded to queue"
-            else:
-                msg = None
-        else:
-            msg = "Query not found."
-
-        # Send all responses as followups after deferring
-        if join_message:
-            await ctx.send_followup(join_message)
-        if msg:
-            await ctx.send_followup(msg)
-            
-    @discordSuperUtils.CogManager.event(discordSuperUtils.MusicManager)
-    async def on_play(self, ctx, player):
-        if player.requester==None:
-            requester = "Autoplay"
-        else:
-            requester = player.requester.mention
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'noplaylist': True,
-            'quiet': True,
-            'nocheckcertificate': True,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
-            'verbose': True
-        }
         try:
-            with YoutubeDL(ydl_opts) as yt:
-                info = yt.extract_info(player.url, download=False)
-                thumbnail_url = info.get('thumbnail')
-                author = info.get('uploader')
-                channel_url = info.get('uploader_url')
+            songs = await Song.from_query_list(query, ctx.author)
         except Exception as e:
-            await ctx.send_followup(f"Download error: {str(e)}. Please make sure the video is public and available, and that yt-dlp is up to date.")
+            await ctx.send_followup(f"❌ Error searching: {e}")
             return
-        embed = discord.Embed(title="<:play:918874928219050094> Now Playing", description=f"**{player.title}**", color=0xfa0a12)
-        if thumbnail_url:
-            embed.set_thumbnail(url=thumbnail_url)
-        embed.add_field(name="Duration:", value=f"{convert(int(player.duration))}", inline=True)
+
+        if not songs:
+            await ctx.send_followup("Query not found.")
+            return
+
+        first_played = await player.add_and_play(songs)
+
+        if first_played:
+            # Song started playing immediately — on_play embed will handle the message
+            embed = discord.Embed(
+                title="<:play:918874928219050094> Now Playing",
+                description=f"**{first_played.title}**",
+                color=0xfa0a12
+            )
+            if first_played.thumbnail:
+                embed.set_thumbnail(url=first_played.thumbnail)
+            embed.add_field(name="Duration:", value=f"{convert(int(first_played.duration))}", inline=True)
+            embed.add_field(name="Requested By:", value=f"{first_played.requester.mention if first_played.requester else 'Unknown'}", inline=True)
+            embed.add_field(name="URL", value=f"[Click Here]({first_played.url})", inline=True)
+            if first_played.uploader and first_played.uploader_url:
+                embed.add_field(name="Uploaded By:", value=f"[{first_played.uploader}]({first_played.uploader_url})", inline=True)
+            embed.set_footer(text="Music By Cosmic Bot", icon_url="https://i.ibb.co/fNkh1QD/avatr.png")
+            await ctx.send_followup(embed=embed)
+
+            if len(songs) > 1:
+                await ctx.send_followup(f"📋 Added **{len(songs) - 1}** more song(s) to the queue.")
+        else:
+            if len(songs) == 1:
+                await ctx.send_followup(f"📋 **{songs[0].title}** added to queue.")
+            else:
+                await ctx.send_followup(f"📋 Added **{len(songs)}** song(s) to the queue.")
+
+    # ─── Join ─────────────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Joins the VC you are currently in.")
+    async def join(self, ctx):
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
+            return
+        if ctx.voice_client and ctx.voice_client.is_connected():
+            await ctx.voice_client.move_to(ctx.author.voice.channel)
+        else:
+            await ctx.author.voice.channel.connect()
+        await ctx.respond(f"<:call_connect:918875388527145091> Joined <#{ctx.author.voice.channel.id}>")
+
+    # ─── Leave ────────────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Disconnects the bot from VC")
+    async def leave(self, ctx):
+        if ctx.voice_client:
+            player = get_player(ctx)
+            if player:
+                player.clear()
+            await ctx.voice_client.disconnect()
+            if ctx.guild.id in players:
+                del players[ctx.guild.id]
+            await ctx.respond("<:call_disconnect:918875403567910933> Left Voice Channel")
+        else:
+            await ctx.respond("I'm not connected to a voice channel!")
+
+    # ─── Now Playing ──────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Gives information about currently playing song!")
+    async def now_playing(self, ctx):
+        player = get_player(ctx)
+        if not player or not player.current:
+            await ctx.respond("No song is being played currently!")
+            return
+
+        song = player.current
+        requester = song.requester.mention if song.requester else "Unknown"
+
+        loop_status = "Disabled"
+        if player.loop:
+            loop_status = "Enabled"
+        elif player.queue_loop:
+            loop_status = "Queue Loop Enabled"
+
+        embed = discord.Embed(
+            title="<:play:918874928219050094> Now Playing",
+            description=f"**{song.title}**",
+            color=0xfa0a12
+        )
+        if song.thumbnail:
+            embed.set_thumbnail(url=song.thumbnail)
+        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url if ctx.author.avatar else discord.Embed.Empty)
+        embed.add_field(name="Duration:", value=f"{convert(int(song.duration))}", inline=True)
+        embed.add_field(name="Looping:", value=f"{loop_status}", inline=True)
         embed.add_field(name="Requested By:", value=f"{requester}", inline=True)
-        embed.add_field(name="URL", value=f"[Click Here]({player.url})", inline=True)
-        if author and channel_url:
-            embed.add_field(name="Uploaded By:", value=f"[{author}]({channel_url})", inline=True)
-        embed.set_footer(text=f"Music By Cosmic Bot", icon_url="https://i.ibb.co/fNkh1QD/avatr.png")
+        embed.add_field(name="URL", value=f"[Click Here]({song.url})", inline=True)
+        if song.uploader and song.uploader_url:
+            embed.add_field(name="Uploaded By:", value=f"[{song.uploader}]({song.uploader_url})", inline=True)
+        if song.view_count:
+            embed.add_field(name="\u200b", value=f"<:views:918875283526942790> {convert2(int(song.view_count))}")
+        embed.set_image(url="https://i.imgur.com/ufxvZ0j.gif")
+        embed.set_footer(text="Music By Cosmic Bot", icon_url="https://media.discordapp.net/attachments/780650657811267595/835143738749616178/PicsArt_04-23-06.53.52.jpg")
         await ctx.respond(embed=embed)
 
-    
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Disconnects the bot from VC")
-    async def leave(self, ctx):
-        try:
-            if queue := await self.MusicManager.get_queue(ctx):
-                loop = queue.loop
-                if loop == discordSuperUtils.Loops.LOOP:
-                    await self.MusicManager.loop(ctx)
-                elif loop == discordSuperUtils.Loops.QUEUE_LOOP:
-                    await self.MusicManager.queueloop(ctx)
-                queue.clear()
-        except:pass
-        await self.MusicManager.leave(ctx)
-        await ctx.respond("<:call_disconnect:918875403567910933> Left Voice Channel")
+    # ─── Skip ─────────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Gives information about currently playing song!")
-    async def now_playing(self, ctx):
-        if player := await self.MusicManager.now_playing(ctx):
-            if queue := await self.MusicManager.get_queue(ctx):
-                loop = queue.loop
-                loop_status = None
-                if loop == discordSuperUtils.Loops.LOOP:
-                    loop_status = "Enabled."
-                elif loop == discordSuperUtils.Loops.QUEUE_LOOP:
-                    loop_status = "Queue Loop Enabled."
-                elif loop == discordSuperUtils.Loops.NO_LOOP:
-                    loop_status = "Disabled"
-            if player.requester == None:
-                requester = "Autoplay"
-            else:
-                requester = player.requester.mention
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'noplaylist': True,
-                'quiet': True,
-                'nocheckcertificate': True,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
-                'verbose': True
-            }
-            try:
-                with YoutubeDL(ydl_opts) as yt:
-                    info = yt.extract_info(player.url, download=False)
-                    thumbnail_url = info.get('thumbnail')
-                    author = info.get('uploader')
-                    channel_url = info.get('uploader_url')
-                    views = info.get('view_count')
-            except Exception as e:
-                await ctx.send_followup(f"Download error: {str(e)}. Please make sure the video is public and available, and that yt-dlp is up to date.")
-                return
-            played = await self.MusicManager.get_player_played_duration(ctx, player)
-            embed = discord.Embed(title="<:play:918874928219050094> Now Playing", description=f"**{player.data['title']}**", color=0xfa0a12)
-            if thumbnail_url:
-                embed.set_thumbnail(url=thumbnail_url)
-            embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.avatar.url)
-            embed.add_field(name="Played:", value=f"{convert(played)}", inline=True)
-            embed.add_field(name="Duration:", value=f"{convert(int(player.duration))}", inline=True)
-            embed.add_field(name="Looping:", value=f"{loop_status}", inline=True)
-            embed.add_field(name="Requested By:", value=f"{requester}", inline=True)
-            embed.add_field(name="URL", value=f"[Click Here]({player.url})", inline=True)
-            if author and channel_url:
-                embed.add_field(name="Uploaded By:", value=f"[{author}]({channel_url})", inline=True)
-            if views:
-                embed.add_field(name="\u200b", value=f"<:views:918875283526942790> {convert2(int(views))}")
-            embed.set_image(url=f"https://i.imgur.com/ufxvZ0j.gif")
-            embed.set_footer(text=f"Music By Cosmic Bot", icon_url="https://media.discordapp.net/attachments/780650657811267595/835143738749616178/PicsArt_04-23-06.53.52.jpg")
-            await ctx.respond(embed=embed)
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Joins the VC you are currently in.")
-    async def join(self, ctx):
-        if vc :=await self.MusicManager.join(ctx):
-            await ctx.respond(f"<:call_connect:918875388527145091> Joined <#{vc.id}>")
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Skips the song")
+    async def skip(self, ctx, index: Option(int, "Song index number", required=False, default=1)):
+        player = get_player(ctx)
+        if not player or not player.current:
+            await ctx.respond("No song is being played currently!")
+            return
 
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Searches for the song and plays it if available.")
-    async def play(self, ctx,query:Option(str,"Song name or Song/Playlist link from YT or Spotify")):
-        await Music.play_cmd(self,ctx,query)
+        if player.loop:
+            await ctx.respond("Disable loop first!")
+            return
 
+        if index > 1 and index - 1 < len(player.queue):
+            # Skip to a specific position — remove songs before that index
+            for _ in range(index - 1):
+                skipped = player.queue.pop(0)
+                player.history.append(skipped)
 
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Changes the volume of the player.")
-    async def volume(self, ctx, volume:Option(int,"Volume number [0-100]")):
-        await self.MusicManager.volume(ctx, volume)
-        await ctx.respond("Volume changed successfully!")
+        if ctx.voice_client and ctx.voice_client.is_playing():
+            ctx.voice_client.stop()  # This triggers the after callback → play_next
+        await ctx.respond("<:next:887770665250345021> Skipped!")
 
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Toggles loop")
-    async def loop(self, ctx):
-        is_loop = await self.MusicManager.loop(ctx)
-        if is_loop == True:
-            loop ="Enabled"
-        elif is_loop == False:
-            loop = "Disabled"
-        await ctx.respond(f"<:Loop:956597783744372756>Looping {loop}")
+    # ─── Queue ────────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Toggles queue looping")
-    async def queueloop(self, ctx):
-        is_loop = await self.MusicManager.queueloop(ctx)
-        if is_loop == True:
-            loop ="Enabled"
-        elif is_loop == False:
-            loop = "Disabled"
-        await ctx.respond(f"<:Loop:956597783744372756>Queue Looping {loop}")
-
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Shows recently playes songs")
-    async def history(self, ctx):
-        formatted_history = [
-            f"Title: '{x.title}'\nRequester: {x.requester.mention}" for x in ((await self.MusicManager.get_queue(ctx)).history)
-        ]
-        embeds = discordSuperUtils.generate_embeds(formatted_history,
-                                                   "Song History",
-                                                   "Shows all played songs",
-                                                   10,
-                                                   string_format="{}")
-
-        page_manager = discordSuperUtils.PageManager(ctx, embeds, public=True)
-        await page_manager.run()
-
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Skips the song")
-    async def skip(self, ctx, index:Option(int,"Song index number",required=False,default=1)):
-        if player := await self.MusicManager.now_playing(ctx):
-            if queue := await self.MusicManager.get_queue(ctx):
-                
-                loop = queue.loop
-                loop_status = None
-                if loop == discordSuperUtils.Loops.LOOP:
-                    loop_status = True
-                elif loop == discordSuperUtils.Loops.NO_LOOP:
-                    loop_status = False
-            if loop_status==True:
-                await ctx.respond("Disable loop first!")
-                return
-            if await self.MusicManager.skip(ctx, index-1):
-                pass
-            '''elif voter != player.requester.id:
-            
-                count = len(ctx.author.voice.channel.members)
-                print(count)
-                if count <= 3:
-                    if await self.MusicManager.skip(ctx, index):
-                        await ctx.message.add_reaction("<:next:887770665250345021>")
-                elif count > 3 and count < 8:
-                    if voter not in self.vote:
-                        self.vote.append(voter)
-                        print(len(self.vote))
-                        if len(self.vote) >=(count-2):
-                            if await self.MusicManager.skip(ctx, index):
-                                await ctx.message.add_reaction("<:next:887770665250345021>")
-                elif count >= 8:
-                    if voter not in self.vote:
-                        self.vote.append(voter)
-                        print(len(self.vote))
-                        if len(self.vote) >=(count-2):
-                            if await self.MusicManager.skip(ctx, index):
-                                await ctx.message.add_reaction("<:next:887770665250345021>")'''
-
-
-
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Shows the song queue")
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Shows the song queue")
     async def queue(self, ctx):
-        if await self.MusicManager.get_queue(ctx):
-            formatted_queue = [
-            f"Title: '{x.title}\nRequester: {x.requester.mention}"
-            for x in (await self.MusicManager.get_queue(ctx)).queue
-        ]
-
-        embeds = discordSuperUtils.generate_embeds(
-            formatted_queue,
-            "Queue",
-            f"Now Playing: {await self.MusicManager.now_playing(ctx)}",
-            10,
-            string_format="{}",
-        )
-
-        page_manager = discordSuperUtils.PageManager(ctx, embeds, public=True,emojis=["<:fast_backward:918877900109914122>","<:backward:918872031796277320>", "<:forward:918871999596617790>","<:fast_forward:918872194099077191>"])
-        await page_manager.run()
-    @queue.error
-    async def queue_error(self,ctx,error):
-        if isinstance(error, discordSuperUtils.QueueEmpty):
+        player = get_player(ctx)
+        if not player or not player.queue:
             await ctx.respond("Queue is Empty")
-            raise commands.CommandError()
+            return
 
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Deletes the particular song from the queue")
-    async def delete(self, ctx,index:Option(str,"Write 'all' to clear or put a number to delete particular song")):
-        if index == 'all':
-            queue = await self.MusicManager.get_queue(ctx)
-            queue.clear()
-        elif index.isnumeric() : 
-            await self.MusicManager.queue_remove(ctx, (int(index)-1))
-        else:
-            await ctx.respond("Please enter only number or type `all` to clear")
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Pauses the song")
-    async def pause(self, ctx):
-        await self.MusicManager.pause(ctx)
-        await ctx.respond(f"<:pause:918871873650053162> Song Paused!")
-		
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Resumes the song")
-    async def resume(self, ctx):
-        await self.MusicManager.resume(ctx)
-        await ctx.respond(f"<:play:918874928219050094> Song was resumed!")
-
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Shows lyrics if available")
-    async def lyrics(self,ctx, query:Option(str,"Song name to search lyrics for",required=False,default=None)):
-        if response := await self.MusicManager.lyrics(ctx, query):
-            title, author, query_lyrics = response
-
-            splitted = query_lyrics.split("\n")
-            res = []
-            current = ""
-            for i, split in enumerate(splitted):
-                if len(splitted) <= i + 1 or len(current) + len(splitted[i + 1]) > 1024:
-                    res.append(current)
-                    current = ""
-                    continue
-                current += split + "\n"
-
-            page_manager = discordSuperUtils.PageManager(
-                ctx,
-                [
-                    discord.Embed(
-                        title=f"Lyrics for '{title}' by '{author}', (Page {i + 1}/{len(res)})",
-                        description=x,
-                    )
-                    for i, x in enumerate(res)
-                ],
-                public=True,
+        pages = []
+        items_per_page = 10
+        for i in range(0, len(player.queue), items_per_page):
+            chunk = player.queue[i:i + items_per_page]
+            desc = "\n".join(
+                f"**{i + j + 1}.** {s.title} — {s.requester.mention if s.requester else 'Unknown'}"
+                for j, s in enumerate(chunk)
             )
-            await page_manager.run()
-        else:
-            await ctx.respond("No lyrics found.")
+            embed = discord.Embed(
+                title="Queue",
+                description=f"Now Playing: **{player.current.title}**\n\n{desc}" if player.current else desc,
+                color=0xfa0a12
+            )
+            embed.set_footer(text=f"Page {i // items_per_page + 1}/{(len(player.queue) - 1) // items_per_page + 1} • {len(player.queue)} song(s)")
+            pages.append(embed)
 
-    # Spotify song details of a user
-    @slash_command(guild_ids=[767591734841835540,1102496776700833825],description="Shows Spotify song details, user is listening to")
-    async def spotifyinfo(self, ctx, member:Option(discord.Member,"Specify member",required=False,default=None)):
+        if len(pages) == 1:
+            await ctx.respond(embed=pages[0])
+        else:
+            # Simple paginator — send first page
+            await ctx.respond(embed=pages[0])
+
+    # ─── History ──────────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Shows recently played songs")
+    async def history(self, ctx):
+        player = get_player(ctx)
+        if not player or not player.history:
+            await ctx.respond("No history yet!")
+            return
+
+        recent = player.history[-10:]  # Last 10
+        desc = "\n".join(
+            f"**{i + 1}.** {s.title} — {s.requester.mention if s.requester else 'Unknown'}"
+            for i, s in enumerate(reversed(recent))
+        )
+        embed = discord.Embed(
+            title="Song History",
+            description=desc,
+            color=0xfa0a12
+        )
+        embed.set_footer(text=f"Showing last {len(recent)} song(s)")
+        await ctx.respond(embed=embed)
+
+    # ─── Delete ───────────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Deletes a particular song from the queue")
+    async def delete(self, ctx, index: Option(str, "Write 'all' to clear or put a number to delete particular song")):
+        player = get_player(ctx)
+        if not player:
+            await ctx.respond("No active player!")
+            return
+
+        if index == 'all':
+            player.queue.clear()
+            await ctx.respond("🗑️ Queue cleared!")
+        elif index.isnumeric():
+            idx = int(index) - 1
+            if 0 <= idx < len(player.queue):
+                removed = player.queue.pop(idx)
+                await ctx.respond(f"🗑️ Removed **{removed.title}** from queue.")
+            else:
+                await ctx.respond("Invalid index!")
+        else:
+            await ctx.respond("Please enter only a number or type `all` to clear.")
+
+    # ─── Pause ────────────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Pauses the song")
+    async def pause(self, ctx):
+        if ctx.voice_client and ctx.voice_client.is_playing():
+            ctx.voice_client.pause()
+            await ctx.respond("<:pause:918871873650053162> Song Paused!")
+        else:
+            await ctx.respond("Nothing is playing!")
+
+    # ─── Resume ───────────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Resumes the song")
+    async def resume(self, ctx):
+        if ctx.voice_client and ctx.voice_client.is_paused():
+            ctx.voice_client.resume()
+            await ctx.respond("<:play:918874928219050094> Song was resumed!")
+        else:
+            await ctx.respond("Nothing is paused!")
+
+    # ─── Volume ───────────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Changes the volume of the player.")
+    async def volume(self, ctx, volume: Option(int, "Volume number [0-100]")):
+        player = get_player(ctx)
+        if not player:
+            await ctx.respond("No active player!")
+            return
+
+        vol = max(0, min(100, volume)) / 100.0
+        player.volume = vol
+
+        if ctx.voice_client and ctx.voice_client.source:
+            ctx.voice_client.source.volume = vol
+
+        await ctx.respond(f"🔊 Volume set to **{volume}%**")
+
+    # ─── Loop ─────────────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Toggles loop")
+    async def loop(self, ctx):
+        player = get_player(ctx)
+        if not player:
+            await ctx.respond("No active player!")
+            return
+
+        player.loop = not player.loop
+        if player.loop:
+            player.queue_loop = False  # Disable queue loop when enabling loop
+        status = "Enabled" if player.loop else "Disabled"
+        await ctx.respond(f"<:Loop:956597783744372756>Looping {status}")
+
+    # ─── Queue Loop ───────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Toggles queue looping")
+    async def queueloop(self, ctx):
+        player = get_player(ctx)
+        if not player:
+            await ctx.respond("No active player!")
+            return
+
+        player.queue_loop = not player.queue_loop
+        if player.queue_loop:
+            player.loop = False  # Disable single loop when enabling queue loop
+        status = "Enabled" if player.queue_loop else "Disabled"
+        await ctx.respond(f"<:Loop:956597783744372756>Queue Looping {status}")
+
+    # ─── Spotify Info ─────────────────────────────────────
+
+    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Shows Spotify song details, user is listening to")
+    async def spotifyinfo(self, ctx, member: Option(discord.Member, "Specify member", required=False, default=None)):
         member = member if member else ctx.author
         spotify_result = next(
             (
@@ -334,11 +511,24 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
             await ctx.respond(f"{member.display_name} is not listening to Spotify.")
             return
 
-        image = await self.ImageManager.create_spotify_card(
-            spotify_activity=spotify_result, font_path=None
+        embed = discord.Embed(
+            title=f"🎵 {spotify_result.title}",
+            description=f"by **{', '.join(spotify_result.artists)}**",
+            color=spotify_result.color,
         )
+        embed.set_thumbnail(url=spotify_result.album_cover_url)
+        embed.add_field(name="Album", value=spotify_result.album, inline=True)
 
-        await ctx.respond(file=image)
+        # Duration
+        duration = spotify_result.duration
+        minutes = duration.seconds // 60
+        seconds = duration.seconds % 60
+        embed.add_field(name="Duration", value=f"{minutes}:{seconds:02d}", inline=True)
+
+        embed.set_footer(text=f"Listening by {member.display_name}", icon_url=member.avatar.url if member.avatar else discord.Embed.Empty)
+        await ctx.respond(embed=embed)
+
+    # ─── Before Invoke Checks ─────────────────────────────
 
     @skip.before_invoke
     @leave.before_invoke
@@ -348,69 +538,76 @@ class Music(commands.Cog, discordSuperUtils.CogManager.Cog, name="Music"):
     @queueloop.before_invoke
     @delete.before_invoke
     @volume.before_invoke
-    async def voice_state(self,ctx):
-    
-        if ctx.guild.get_role(767591734850879495) in ctx.author.roles or ctx.guild.get_role(816681109001207808) in ctx.author.roles or ctx.guild.id != 767591734841835540 or ctx.guild.id!=1102496776700833825 :
+    async def voice_state(self, ctx):
+        if ctx.guild.get_role(767591734850879495) in ctx.author.roles or ctx.guild.get_role(816681109001207808) in ctx.author.roles or ctx.guild.id != 767591734841835540 or ctx.guild.id != 1102496776700833825:
             if not ctx.author.voice or not ctx.author.voice.channel:
-                msg = await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
+                await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
                 raise commands.CommandError()
         else:
-            if ctx.channel.id != 767591735693410370 and ctx.channel.id !=888410427896242194 and ctx.channel.id!=1205935346899095552:
-                msg = await ctx.respond("You can use this command only in <#767591735693410370>")
+            if ctx.channel.id != 767591735693410370 and ctx.channel.id != 888410427896242194 and ctx.channel.id != 1205935346899095552:
+                await ctx.respond("You can use this command only in <#767591735693410370>")
                 raise commands.CommandError()
-            elif ctx.author.voice.channel.id !=  888315285629722624 or ctx.author.voice.channel.id !=  1205935289269493842:
-                msg = await ctx.respond("I can play music only in <#888315285629722624>")
+            elif ctx.author.voice.channel.id != 888315285629722624 or ctx.author.voice.channel.id != 1205935289269493842:
+                await ctx.respond("I can play music only in <#888315285629722624>")
                 raise commands.CommandError()
             elif not ctx.author.voice or not ctx.author.voice.channel:
-                msg = await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
+                await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
                 raise commands.CommandError()
-            elif ctx.author.voice.channel != ctx.voice_client.channel :
-                msg = await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to Bot's Voice Channel.")
+            elif ctx.author.voice.channel != ctx.voice_client.channel:
+                await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to Bot's Voice Channel.")
                 raise commands.CommandError()
+
     @join.before_invoke
     @play.before_invoke
-    async def voice_channel(self,ctx):
-        if ctx.guild.get_role(767591734850879495) in ctx.author.roles or ctx.guild.get_role(816681109001207808) in ctx.author.roles or ctx.guild.id != 767591734841835540 or ctx.guild.id!=1102496776700833825:
+    async def voice_channel(self, ctx):
+        if ctx.guild.get_role(767591734850879495) in ctx.author.roles or ctx.guild.get_role(816681109001207808) in ctx.author.roles or ctx.guild.id != 767591734841835540 or ctx.guild.id != 1102496776700833825:
             if not ctx.author.voice or not ctx.author.voice.channel:
                 raise commands.CommandError()
         else:
-            if ctx.channel.id != 767591735693410370 and ctx.channel.id !=888410427896242194 and ctx.channel.id!=1205935346899095552:
-                msg = await ctx.respond("You can use this command only in <#767591735693410370>")
+            if ctx.channel.id != 767591735693410370 and ctx.channel.id != 888410427896242194 and ctx.channel.id != 1205935346899095552:
+                await ctx.respond("You can use this command only in <#767591735693410370>")
                 raise commands.CommandError()
             elif not ctx.author.voice or not ctx.author.voice.channel:
-                msg = await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
+                await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
                 raise commands.CommandError()
-            elif ctx.author.voice.channel.id !=  888315285629722624 or ctx.author.voice.channel.id !=  1205935289269493842:
-                msg = await ctx.respond("I can play music only in <#888315285629722624>")
+            elif ctx.author.voice.channel.id != 888315285629722624 or ctx.author.voice.channel.id != 1205935289269493842:
+                await ctx.respond("I can play music only in <#888315285629722624>")
                 raise commands.CommandError()
+
     @queue.before_invoke
     @now_playing.before_invoke
-    async def bruh(self,ctx):
-    
-        if ctx.guild.get_role(767591734850879495) in ctx.author.roles or ctx.guild.get_role(816681109001207808) in ctx.author.roles or ctx.guild.id != 767591734841835540 or ctx.guild.id!=1102496776700833825:
+    async def bruh(self, ctx):
+        if ctx.guild.get_role(767591734850879495) in ctx.author.roles or ctx.guild.get_role(816681109001207808) in ctx.author.roles or ctx.guild.id != 767591734841835540 or ctx.guild.id != 1102496776700833825:
             pass
         else:
-            if ctx.channel.id != 767591735693410370 and ctx.channel.id !=888410427896242194 and ctx.channel.id!=1205935346899095552:
-                msg = await ctx.respond("You can use this command only in <#767591735693410370>")
+            if ctx.channel.id != 767591735693410370 and ctx.channel.id != 888410427896242194 and ctx.channel.id != 1205935346899095552:
+                await ctx.respond("You can use this command only in <#767591735693410370>")
                 raise commands.CommandError()
+
+
 def convert2(like):
-        if like>1000000000:
-            like_2 = str((like//10000000)/100)+"B"
-        elif like > 1000000 :
-            like_2 = str((like//10000)/100)+"M"
-        elif like > 1000 :
-            like_2 = str((like//10)/100)+"K"
-        else :
-            like_2 = str(like)
-        return like_2
+    if like > 1000000000:
+        like_2 = str((like // 10000000) / 100) + "B"
+    elif like > 1000000:
+        like_2 = str((like // 10000) / 100) + "M"
+    elif like > 1000:
+        like_2 = str((like // 10) / 100) + "K"
+    else:
+        like_2 = str(like)
+    return like_2
+
+
 def convert(seconds):
     seconds = seconds % (24 * 3600)
     hour = seconds // 3600
     seconds %= 3600
     minutes = seconds // 60
     seconds %= 60
-    if hour == 0: 
+    if hour == 0:
         return "%02d:%02d" % (minutes, seconds)
-    else:return "%02d:%02d:%02d" % (hour,minutes, seconds)
+    else:
+        return "%02d:%02d:%02d" % (hour, minutes, seconds)
+
+
 def setup(bot):
     bot.add_cog(Music(bot))
