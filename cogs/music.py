@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord.commands import slash_command, Option
 import asyncio
 import functools
+import time
 from yt_dlp import YoutubeDL
 
 
@@ -39,6 +40,7 @@ class Song:
         self.uploader_url = data.get('uploader_url', '')
         self.view_count = data.get('view_count', 0)
         self.requester = requester
+        self._extracted_at = time.time()  # Track when the stream URL was extracted
 
     @classmethod
     async def from_query(cls, query: str, requester: discord.Member = None):
@@ -79,8 +81,15 @@ class Song:
 
         return songs
 
+    def is_stream_fresh(self, max_age=600):
+        """Check if the stream URL is still fresh (default: 10 minutes)."""
+        return (time.time() - self._extracted_at) < max_age
+
     async def refresh_stream_url(self):
-        """Re-extract the stream URL (they expire)."""
+        """Re-extract the stream URL (they expire). Skips if still fresh."""
+        if self.stream_url and self.is_stream_fresh():
+            return self.stream_url
+
         loop = asyncio.get_event_loop()
         with YoutubeDL(YDL_OPTIONS) as ydl:
             data = await loop.run_in_executor(
@@ -89,6 +98,7 @@ class Song:
         if 'entries' in data:
             data = data['entries'][0]
         self.stream_url = data.get('url', '')
+        self._extracted_at = time.time()
         return self.stream_url
 
 
@@ -215,16 +225,7 @@ class Music(commands.Cog, name="Music"):
     async def play(self, ctx, query: Option(str, "Song name or Song/Playlist link from YT or Spotify")):
         await ctx.defer()
 
-        # Auto-join voice channel
-        if not ctx.voice_client or not ctx.voice_client.is_connected():
-            if not ctx.author.voice or not ctx.author.voice.channel:
-                await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
-                return
-            vc = await ctx.author.voice.channel.connect()
-            await ctx.send_followup(f"<:call_connect:918875388527145091> Joined <#{vc.channel.id}>")
-
-        player = self._get_or_create_player(ctx)
-
+        # Search FIRST (before joining VC, so we don't sit idle in voice)
         try:
             songs = await Song.from_query_list(query, ctx.author)
         except Exception as e:
@@ -235,10 +236,18 @@ class Music(commands.Cog, name="Music"):
             await ctx.send_followup("Query not found.")
             return
 
+        # Now join voice channel (search is done, playback will start immediately)
+        if not ctx.voice_client or not ctx.voice_client.is_connected():
+            if not ctx.author.voice or not ctx.author.voice.channel:
+                await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
+                return
+            vc = await ctx.author.voice.channel.connect()
+            await ctx.send_followup(f"<:call_connect:918875388527145091> Joined <#{vc.channel.id}>")
+
+        player = self._get_or_create_player(ctx)
         first_played = await player.add_and_play(songs)
 
         if first_played:
-            # Song started playing immediately — on_play embed will handle the message
             embed = discord.Embed(
                 title="<:play:918874928219050094> Now Playing",
                 description=f"**{first_played.title}**",
