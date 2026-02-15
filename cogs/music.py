@@ -60,13 +60,16 @@ class Song:
     @classmethod
     async def from_query_list(cls, query: str, requester: discord.Member = None):
         """Search and return a list of songs (handles playlists)."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
-        # First check if it's a playlist
-        playlist_opts = YDL_OPTIONS.copy()
-        playlist_opts['noplaylist'] = False
+        # Only enable playlist mode for actual playlist URLs
+        is_playlist_url = 'playlist' in query.lower() or 'list=' in query.lower()
 
-        with YoutubeDL(playlist_opts) as ydl:
+        opts = YDL_OPTIONS.copy()
+        if is_playlist_url:
+            opts['noplaylist'] = False
+
+        with YoutubeDL(opts) as ydl:
             data = await loop.run_in_executor(
                 None, functools.partial(ydl.extract_info, query, download=False)
             )
@@ -225,6 +228,8 @@ class Music(commands.Cog, name="Music"):
     async def play(self, ctx, query: Option(str, "Song name or Song/Playlist link from YT or Spotify")):
         await ctx.defer()
 
+        await ctx.send_followup(f"🔍 Searching for **{query}**...")
+
         # Search FIRST (before joining VC, so we don't sit idle in voice)
         try:
             songs = await Song.from_query_list(query, ctx.author)
@@ -239,9 +244,9 @@ class Music(commands.Cog, name="Music"):
         # Now join voice channel (search is done, playback will start immediately)
         if not ctx.voice_client or not ctx.voice_client.is_connected():
             if not ctx.author.voice or not ctx.author.voice.channel:
-                await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
+                await ctx.send_followup("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
                 return
-            vc = await ctx.author.voice.channel.connect()
+            vc = await ctx.author.voice.channel.connect(self_deaf=True)
             await ctx.send_followup(f"<:call_connect:918875388527145091> Joined <#{vc.channel.id}>")
 
         player = self._get_or_create_player(ctx)
@@ -567,7 +572,6 @@ class Music(commands.Cog, name="Music"):
                 raise commands.CommandError()
 
     @join.before_invoke
-    @play.before_invoke
     async def voice_channel(self, ctx):
         if ctx.guild.get_role(767591734850879495) in ctx.author.roles or ctx.guild.get_role(816681109001207808) in ctx.author.roles or ctx.guild.id != 767591734841835540 or ctx.guild.id != 1102496776700833825:
             if not ctx.author.voice or not ctx.author.voice.channel:
