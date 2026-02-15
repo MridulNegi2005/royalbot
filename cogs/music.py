@@ -188,11 +188,10 @@ class MusicPlayer:
                 'yt-dlp',
                 '-f', 'bestaudio',
                 '-o', '-',
-                '--quiet',
-                '--no-warnings',
                 song.url
             ]
             debug(f"_play_song: spawning yt-dlp subprocess for '{song.url}'")
+            debug(f"_play_song: command = {' '.join(ytdlp_cmd)}")
             try:
                 import subprocess
                 self._ytdlp_process = subprocess.Popen(
@@ -205,11 +204,30 @@ class MusicPlayer:
                 await self.play_next()
                 return
 
+            # Check if yt-dlp process started OK
+            await asyncio.sleep(2)
+            poll_result = self._ytdlp_process.poll()
+            debug(f"_play_song: yt-dlp process poll after 2s = {poll_result} (None=still running)")
+            if poll_result is not None:
+                # Process already exited — read stderr for errors
+                stderr_output = self._ytdlp_process.stderr.read().decode('utf-8', errors='replace')
+                debug(f"_play_song: yt-dlp FAILED, exit code={poll_result}, stderr={stderr_output[:500]}")
+                await self.play_next()
+                return
+
             source = discord.FFmpegPCMAudio(self._ytdlp_process.stdout, pipe=True)
             source = discord.PCMVolumeTransformer(source, volume=self.volume)
 
             def after_callback(err):
                 debug(f"after_callback: song finished, err={err}")
+                # Read yt-dlp stderr for any errors
+                try:
+                    if self._ytdlp_process and self._ytdlp_process.stderr:
+                        stderr_output = self._ytdlp_process.stderr.read().decode('utf-8', errors='replace')
+                        if stderr_output.strip():
+                            debug(f"after_callback: yt-dlp stderr: {stderr_output[:500]}")
+                except Exception:
+                    pass
                 # Kill yt-dlp process if still running
                 try:
                     if self._ytdlp_process and self._ytdlp_process.poll() is None:
