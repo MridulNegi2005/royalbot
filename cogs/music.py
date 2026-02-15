@@ -4,7 +4,11 @@ from discord.commands import slash_command, Option
 import asyncio
 import functools
 import time
+import sys
 from yt_dlp import YoutubeDL
+
+def debug(msg):
+    print(f"[MUSIC DEBUG {time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr, flush=True)
 
 
 # yt-dlp options for searching and extracting stream URLs (no download)
@@ -64,16 +68,18 @@ class Song:
 
         # Only enable playlist mode for actual playlist URLs
         is_playlist_url = 'playlist' in query.lower() or 'list=' in query.lower()
+        debug(f"from_query_list: query='{query}', is_playlist={is_playlist_url}")
 
         opts = YDL_OPTIONS.copy()
         if is_playlist_url:
             opts['noplaylist'] = False
 
+        debug("from_query_list: starting yt_dlp extract_info...")
         with YoutubeDL(opts) as ydl:
             data = await loop.run_in_executor(
                 None, functools.partial(ydl.extract_info, query, download=False)
             )
-
+        debug(f"from_query_list: extract_info DONE, got {len(data.get('entries', [data]))} result(s)")
         songs = []
         if 'entries' in data:
             for entry in data['entries']:
@@ -91,8 +97,10 @@ class Song:
     async def refresh_stream_url(self):
         """Re-extract the stream URL (they expire). Skips if still fresh."""
         if self.stream_url and self.is_stream_fresh():
+            debug(f"refresh_stream_url: SKIPPED (still fresh, age={time.time() - self._extracted_at:.1f}s)")
             return self.stream_url
 
+        debug(f"refresh_stream_url: RE-EXTRACTING (age={time.time() - self._extracted_at:.1f}s)")
         loop = asyncio.get_event_loop()
         with YoutubeDL(YDL_OPTIONS) as ydl:
             data = await loop.run_in_executor(
@@ -123,6 +131,7 @@ class MusicPlayer:
 
     async def play_next(self, error=None):
         """Callback invoked when the current song ends. Plays the next song."""
+        debug(f"play_next called, error={error}, loop={self.loop}, queue_loop={self.queue_loop}, queue_len={len(self.queue)}")
         if error:
             print(f"Player error: {error}")
 
@@ -148,6 +157,7 @@ class MusicPlayer:
 
     async def _play_song(self, song: Song):
         """Actually play a song through the voice client."""
+        debug(f"_play_song: START for '{song.title}'")
         async with self._play_lock:
             self.current = song
 
@@ -155,18 +165,23 @@ class MusicPlayer:
                 # Refresh the stream URL in case it expired
                 await song.refresh_stream_url()
             except Exception as e:
+                debug(f"_play_song: refresh FAILED: {e}")
                 print(f"Failed to refresh stream URL: {e}")
                 # Try playing next
                 await self.play_next()
                 return
 
+            debug(f"_play_song: voice_client={self.voice_client}, connected={self.voice_client.is_connected() if self.voice_client else 'N/A'}")
             if not self.voice_client or not self.voice_client.is_connected():
+                debug("_play_song: ABORT - not connected to voice!")
                 return
 
+            debug(f"_play_song: Creating FFmpeg source, stream_url={song.stream_url[:80]}...")
             source = discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTIONS)
             source = discord.PCMVolumeTransformer(source, volume=self.volume)
 
             def after_callback(err):
+                debug(f"after_callback: song finished, err={err}")
                 # Schedule play_next on the event loop
                 fut = asyncio.run_coroutine_threadsafe(
                     self.play_next(err), self.bot.loop
@@ -177,6 +192,7 @@ class MusicPlayer:
                     print(f"Error in after callback: {e}")
 
             self.voice_client.play(source, after=after_callback)
+            debug(f"_play_song: voice_client.play() called - PLAYING NOW")
 
     async def add_and_play(self, songs: list[Song]):
         """Add songs to the queue. If nothing is playing, start playback."""
@@ -226,31 +242,43 @@ class Music(commands.Cog, name="Music"):
 
     @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Searches for the song and plays it if available.")
     async def play(self, ctx, query: Option(str, "Song name or Song/Playlist link from YT or Spotify")):
+        debug(f"=== PLAY COMMAND START === query='{query}'")
         await ctx.defer()
+        debug("play: deferred")
 
         await ctx.send_followup(f"🔍 Searching for **{query}**...")
+        debug("play: sent searching followup")
 
         # Search FIRST (before joining VC, so we don't sit idle in voice)
         try:
+            debug("play: starting search...")
             songs = await Song.from_query_list(query, ctx.author)
+            debug(f"play: search DONE, found {len(songs)} song(s)")
         except Exception as e:
+            debug(f"play: search FAILED: {e}")
             await ctx.send_followup(f"❌ Error searching: {e}")
             return
 
         if not songs:
+            debug("play: no songs found")
             await ctx.send_followup("Query not found.")
             return
 
         # Now join voice channel (search is done, playback will start immediately)
+        debug(f"play: voice_client={ctx.voice_client}, connected={ctx.voice_client.is_connected() if ctx.voice_client else 'N/A'}")
         if not ctx.voice_client or not ctx.voice_client.is_connected():
             if not ctx.author.voice or not ctx.author.voice.channel:
                 await ctx.send_followup("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
                 return
+            debug(f"play: connecting to VC {ctx.author.voice.channel.id}...")
             vc = await ctx.author.voice.channel.connect()
+            debug(f"play: CONNECTED to VC, vc={vc}, is_connected={vc.is_connected()}")
             await ctx.send_followup(f"<:call_connect:918875388527145091> Joined <#{vc.channel.id}>")
 
         player = self._get_or_create_player(ctx)
+        debug(f"play: got player, calling add_and_play...")
         first_played = await player.add_and_play(songs)
+        debug(f"play: add_and_play returned, first_played={'yes' if first_played else 'no (queued)'}")
 
         if first_played:
             embed = discord.Embed(
