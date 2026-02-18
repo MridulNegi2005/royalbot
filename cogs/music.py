@@ -2,16 +2,55 @@ import discord
 from discord.ext import commands
 from discord.commands import slash_command, Option
 import asyncio
+import subprocess
 import functools
-import time
-import sys
+import re
 from yt_dlp import YoutubeDL
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
 
-def debug(msg):
-    print(f"[MUSIC DEBUG {time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr, flush=True)
+
+# Spotify API
+SPOTIFY_CLIENT_ID = "7bff23b27d3244f28fcae1a938ab89b6"
+SPOTIFY_CLIENT_SECRET = "6ee356b084e445bbbf878dfa1f5c26fd"
+sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+    client_id=SPOTIFY_CLIENT_ID,
+    client_secret=SPOTIFY_CLIENT_SECRET
+))
+SPOTIFY_REGEX = re.compile(r'https?://open\.spotify\.com/(track|album|playlist)/([a-zA-Z0-9]+)')
 
 
-# yt-dlp options for searching and extracting stream URLs (no download)
+def _get_spotify_tracks(query: str) -> list[str] | None:
+    """If query is a Spotify URL, return 'artist - title' search strings. None otherwise."""
+    match = SPOTIFY_REGEX.search(query)
+    if not match:
+        return None
+
+    spotify_type, spotify_id = match.group(1), match.group(2)
+    tracks = []
+
+    try:
+        if spotify_type == 'track':
+            t = sp.track(spotify_id)
+            tracks.append(f"{t['artists'][0]['name']} - {t['name']}")
+        elif spotify_type == 'album':
+            for item in sp.album_tracks(spotify_id, limit=50)['items']:
+                tracks.append(f"{item['artists'][0]['name']} - {item['name']}")
+        elif spotify_type == 'playlist':
+            # Handle pagination for playlists > 100 tracks? 
+            # For now limit to 100 for speed, users can re-run.
+            for item in sp.playlist_tracks(spotify_id, limit=100)['items']:
+                t = item.get('track')
+                if t:
+                    tracks.append(f"{t['artists'][0]['name']} - {t['name']}")
+    except Exception as e:
+        print(f"Spotify API error: {e}")
+        return None
+
+    return tracks if tracks else None
+
+
+# yt-dlp options for metadata extraction (search + info, no download)
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
     'noplaylist': True,
@@ -31,49 +70,12 @@ class Song:
         self.data = data
         self.title = data.get('title', 'Unknown')
         self.url = data.get('webpage_url', data.get('url', ''))
-        self.stream_url = data.get('url', '')
         self.duration = data.get('duration', 0)
         self.thumbnail = data.get('thumbnail', '')
         self.uploader = data.get('uploader', '')
         self.uploader_url = data.get('uploader_url', '')
         self.view_count = data.get('view_count', 0)
         self.requester = requester
-        self._extracted_at = time.time()  # Track when the stream URL was extracted
-        # Store HTTP headers from yt_dlp — YouTube requires these to allow streaming
-        self.http_headers = data.get('http_headers', {})
-
-    def get_ffmpeg_options(self):
-        """Build FFmpeg options with the proper HTTP headers for this song."""
-        # Build -headers string from yt_dlp's http_headers
-        headers_str = ''
-        if self.http_headers:
-            for key, value in self.http_headers.items():
-                headers_str += f'{key}: {value}\r\n'
-
-        before_opts = '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
-        if headers_str:
-            # -headers must come before -i in FFmpeg
-            before_opts = f'-headers "{headers_str}" {before_opts}'
-
-        return {
-            'before_options': before_opts,
-            'options': '-vn',
-        }
-
-    @classmethod
-    async def from_query(cls, query: str, requester: discord.Member = None):
-        """Search and extract song info from a query string or URL."""
-        loop = asyncio.get_event_loop()
-        with YoutubeDL(YDL_OPTIONS) as ydl:
-            data = await loop.run_in_executor(
-                None, functools.partial(ydl.extract_info, query, download=False)
-            )
-
-        if 'entries' in data:
-            # Take the first search result
-            data = data['entries'][0]
-
-        return cls(data, requester)
 
     @classmethod
     async def from_query_list(cls, query: str, requester: discord.Member = None):
@@ -82,18 +84,19 @@ class Song:
 
         # Only enable playlist mode for actual playlist URLs
         is_playlist_url = 'playlist' in query.lower() or 'list=' in query.lower()
-        debug(f"from_query_list: query='{query}', is_playlist={is_playlist_url}")
 
         opts = YDL_OPTIONS.copy()
         if is_playlist_url:
             opts['noplaylist'] = False
 
-        debug("from_query_list: starting yt_dlp extract_info...")
-        with YoutubeDL(opts) as ydl:
-            data = await loop.run_in_executor(
-                None, functools.partial(ydl.extract_info, query, download=False)
-            )
-        debug(f"from_query_list: extract_info DONE, got {len(data.get('entries', [data]))} result(s)")
+        try:
+            with YoutubeDL(opts) as ydl:
+                data = await loop.run_in_executor(
+                    None, functools.partial(ydl.extract_info, query, download=False)
+                )
+        except Exception:
+            return []
+
         songs = []
         if 'entries' in data:
             for entry in data['entries']:
@@ -103,29 +106,6 @@ class Song:
             songs.append(cls(data, requester))
 
         return songs
-
-    def is_stream_fresh(self, max_age=600):
-        """Check if the stream URL is still fresh (default: 10 minutes)."""
-        return (time.time() - self._extracted_at) < max_age
-
-    async def refresh_stream_url(self):
-        """Re-extract the stream URL (they expire). Skips if still fresh."""
-        if self.stream_url and self.is_stream_fresh():
-            debug(f"refresh_stream_url: SKIPPED (still fresh, age={time.time() - self._extracted_at:.1f}s)")
-            return self.stream_url
-
-        debug(f"refresh_stream_url: RE-EXTRACTING (age={time.time() - self._extracted_at:.1f}s)")
-        loop = asyncio.get_running_loop()
-        with YoutubeDL(YDL_OPTIONS) as ydl:
-            data = await loop.run_in_executor(
-                None, functools.partial(ydl.extract_info, self.url, download=False)
-            )
-        if 'entries' in data:
-            data = data['entries'][0]
-        self.stream_url = data.get('url', '')
-        self.http_headers = data.get('http_headers', {})
-        self._extracted_at = time.time()
-        return self.stream_url
 
 
 class MusicPlayer:
@@ -147,7 +127,6 @@ class MusicPlayer:
 
     async def play_next(self, error=None):
         """Callback invoked when the current song ends. Plays the next song."""
-        debug(f"play_next called, error={error}, loop={self.loop}, queue_loop={self.queue_loop}, queue_len={len(self.queue)}")
         if error:
             print(f"Player error: {error}")
 
@@ -172,46 +151,31 @@ class MusicPlayer:
             self.current = None
 
     async def _play_song(self, song: Song):
-        """Actually play a song through the voice client using yt-dlp pipe."""
-        debug(f"_play_song: START for '{song.title}'")
+        """Play a song by piping yt-dlp audio through FFmpeg."""
         async with self._play_lock:
             self.current = song
 
-            debug(f"_play_song: voice_client={self.voice_client}, connected={self.voice_client.is_connected() if self.voice_client else 'N/A'}")
             if not self.voice_client or not self.voice_client.is_connected():
-                debug("_play_song: ABORT - not connected to voice!")
                 return
 
-            # Use yt-dlp subprocess to pipe audio — bypasses YouTube IP blocking
-            # yt-dlp handles all HTTP auth/headers internally
+            # Kill any existing yt-dlp process
+            self._kill_ytdlp()
+
+            # Spawn yt-dlp to pipe audio — bypasses YouTube IP blocking
+            # Enforce bestaudio and standard options
             ytdlp_cmd = [
-                'yt-dlp',
-                '-f', 'bestaudio',
-                '-o', '-',
+                'yt-dlp', '-f', 'bestaudio',
+                '-o', '-', '--quiet', '--no-warnings',
                 song.url
             ]
-            debug(f"_play_song: spawning yt-dlp subprocess for '{song.url}'")
-            debug(f"_play_song: command = {' '.join(ytdlp_cmd)}")
             try:
-                import subprocess
                 self._ytdlp_process = subprocess.Popen(
                     ytdlp_cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
+                    stderr=subprocess.DEVNULL
                 )
             except Exception as e:
-                debug(f"_play_song: failed to spawn yt-dlp: {e}")
-                await self.play_next()
-                return
-
-            # Check if yt-dlp process started OK
-            await asyncio.sleep(2)
-            poll_result = self._ytdlp_process.poll()
-            debug(f"_play_song: yt-dlp process poll after 2s = {poll_result} (None=still running)")
-            if poll_result is not None:
-                # Process already exited — read stderr for errors
-                stderr_output = self._ytdlp_process.stderr.read().decode('utf-8', errors='replace')
-                debug(f"_play_song: yt-dlp FAILED, exit code={poll_result}, stderr={stderr_output[:500]}")
+                print(f"Failed to spawn yt-dlp: {e}")
                 await self.play_next()
                 return
 
@@ -219,22 +183,7 @@ class MusicPlayer:
             source = discord.PCMVolumeTransformer(source, volume=self.volume)
 
             def after_callback(err):
-                debug(f"after_callback: song finished, err={err}")
-                # Read yt-dlp stderr for any errors
-                try:
-                    if self._ytdlp_process and self._ytdlp_process.stderr:
-                        stderr_output = self._ytdlp_process.stderr.read().decode('utf-8', errors='replace')
-                        if stderr_output.strip():
-                            debug(f"after_callback: yt-dlp stderr: {stderr_output[:500]}")
-                except Exception:
-                    pass
-                # Kill yt-dlp process if still running
-                try:
-                    if self._ytdlp_process and self._ytdlp_process.poll() is None:
-                        self._ytdlp_process.kill()
-                        debug("after_callback: killed yt-dlp process")
-                except Exception:
-                    pass
+                self._kill_ytdlp()
                 # Schedule play_next on the event loop
                 fut = asyncio.run_coroutine_threadsafe(
                     self.play_next(err), self.bot.loop
@@ -245,7 +194,15 @@ class MusicPlayer:
                     print(f"Error in after callback: {e}")
 
             self.voice_client.play(source, after=after_callback)
-            debug(f"_play_song: voice_client.play() called - PLAYING NOW via yt-dlp pipe")
+
+    def _kill_ytdlp(self):
+        """Kill the yt-dlp subprocess if it's still running."""
+        try:
+            if self._ytdlp_process and self._ytdlp_process.poll() is None:
+                self._ytdlp_process.kill()
+                self._ytdlp_process = None
+        except Exception:
+            pass
 
     async def add_and_play(self, songs: list[Song]):
         """Add songs to the queue. If nothing is playing, start playback."""
@@ -261,9 +218,10 @@ class MusicPlayer:
         else:
             # Something is playing => queue everything
             self.queue.extend(songs)
-            return None  # indicates songs were queued, not immediately played
+            return None
 
     def clear(self):
+        self._kill_ytdlp()
         self.queue.clear()
         self.current = None
         self.loop = False
@@ -281,8 +239,6 @@ def get_player(ctx) -> MusicPlayer | None:
 class Music(commands.Cog, name="Music"):
     def __init__(self, bot):
         self.bot = bot
-        self.client_secret = "6ee356b084e445bbbf878dfa1f5c26fd"
-        self.client_id = "7bff23b27d3244f28fcae1a938ab89b6"
 
     def _get_or_create_player(self, ctx) -> MusicPlayer:
         if ctx.guild.id not in players:
@@ -291,42 +247,73 @@ class Music(commands.Cog, name="Music"):
         player.voice_client = ctx.voice_client
         return player
 
+    async def _queue_spotify_tracks(self, ctx, tracks: list[str], requester: discord.Member):
+        """Background task to load remaining Spotify tracks."""
+        player = self._get_or_create_player(ctx)
+        total = len(tracks)
+        for i, track_query in enumerate(tracks):
+            try:
+                # Search one by one — respecting ratelimits implicitly by serializing
+                songs = await Song.from_query_list(track_query, requester)
+                if songs:
+                    player.queue.append(songs[0])
+            except Exception:
+                continue
+            
+            # Optional: Log progress or yield to loop
+            await asyncio.sleep(0.1)
+
+        await ctx.send_followup(f"✅ Finished loading **{total}** additional tracks from Spotify.")
+
     # ─── Play ─────────────────────────────────────────────
 
     @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Searches for the song and plays it if available.")
     async def play(self, ctx, query: Option(str, "Song name or Song/Playlist link from YT or Spotify")):
-        debug(f"=== PLAY COMMAND START === query='{query}'")
         await ctx.defer()
-        debug("play: deferred")
-
         await ctx.send_followup(f"🔍 Searching for **{query}**...")
-        debug("play: sent searching followup")
 
-        # Search FIRST (before joining VC, so we don't sit idle in voice)
-        try:
-            debug("play: starting search...")
-            songs = await Song.from_query_list(query, ctx.author)
-            debug(f"play: search DONE, found {len(songs)} song(s)")
-        except Exception as e:
-            debug(f"play: search FAILED: {e}")
-            await ctx.send_followup(f"❌ Error searching: {e}")
-            return
+        # 1. Check for Spotify URL
+        spotify_tracks = await asyncio.to_thread(_get_spotify_tracks, query)
+        
+        songs = []
+        background_task = None
+
+        if spotify_tracks:
+            # We found Spotify tracks!
+            first_track_query = spotify_tracks.pop(0)
+            await ctx.send_followup(f"🎵 Found **{len(spotify_tracks) + 1}** Spotify track(s). Playing first, queuing rest...")
+            
+            # Resolve the first song immediately
+            try:
+                songs = await Song.from_query_list(first_track_query, ctx.author)
+            except Exception as e:
+                await ctx.send_followup(f"❌ Error searching first Spotify track: {e}")
+                return
+
+            if spotify_tracks:
+                # Schedule the rest to be loaded in background
+                background_task = self._queue_spotify_tracks(ctx, spotify_tracks, ctx.author)
+
+        else:
+            # 2. Standard YouTube Search (or URL)
+            try:
+                songs = await Song.from_query_list(query, ctx.author)
+            except Exception as e:
+                await ctx.send_followup(f"❌ Error searching: {e}")
+                return
 
         if not songs:
-            debug("play: no songs found")
             await ctx.send_followup("Query not found.")
             return
 
-        # Now join voice channel (search is done, playback will start immediately)
-        debug(f"play: voice_client={ctx.voice_client}, connected={ctx.voice_client.is_connected() if ctx.voice_client else 'N/A'}")
+        # 3. Join Voice Channel
         if not ctx.voice_client or not ctx.voice_client.is_connected():
             if not ctx.author.voice or not ctx.author.voice.channel:
                 await ctx.send_followup("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
                 return
 
-            # Clean up any zombie voice client first
+            # Clean up zombie VC
             if ctx.voice_client:
-                debug("play: cleaning up zombie voice client...")
                 try:
                     await ctx.voice_client.disconnect(force=True)
                 except Exception:
@@ -336,45 +323,35 @@ class Music(commands.Cog, name="Music"):
             vc = None
             for attempt in range(3):
                 try:
-                    debug(f"play: connect attempt {attempt + 1} to VC {channel.id}...")
                     vc = await asyncio.wait_for(channel.connect(), timeout=15)
-                    # Give the voice websocket a moment to fully establish
                     await asyncio.sleep(1)
-                    debug(f"play: attempt {attempt + 1}: is_connected={vc.is_connected()}")
                     if vc.is_connected():
                         break
                     else:
-                        debug(f"play: attempt {attempt + 1}: not connected, cleaning up...")
                         try:
                             await vc.disconnect(force=True)
                         except Exception:
                             pass
                         vc = None
                 except asyncio.TimeoutError:
-                    debug(f"play: attempt {attempt + 1}: TIMED OUT after 15s")
-                    # Force cleanup of any partial connection
                     if ctx.guild.voice_client:
                         try:
                             await ctx.guild.voice_client.disconnect(force=True)
                         except Exception:
                             pass
                     vc = None
-                except Exception as e:
-                    debug(f"play: attempt {attempt + 1}: ERROR: {e}")
+                except Exception:
                     vc = None
 
             if not vc or not vc.is_connected():
-                debug("play: ALL connect attempts FAILED")
                 await ctx.send_followup("❌ Failed to connect to voice channel. Please try again.")
                 return
 
-            debug(f"play: CONNECTED to VC successfully")
             await ctx.send_followup(f"<:call_connect:918875388527145091> Joined <#{channel.id}>")
 
+        # 4. Play the first song(s)
         player = self._get_or_create_player(ctx)
-        debug(f"play: got player, calling add_and_play...")
         first_played = await player.add_and_play(songs)
-        debug(f"play: add_and_play returned, first_played={'yes' if first_played else 'no (queued)'}")
 
         if first_played:
             embed = discord.Embed(
@@ -392,13 +369,22 @@ class Music(commands.Cog, name="Music"):
             embed.set_footer(text="Music By Cosmic Bot", icon_url="https://i.ibb.co/fNkh1QD/avatr.png")
             await ctx.send_followup(embed=embed)
 
-            if len(songs) > 1:
+            # 5. Start background task if pending
+            if background_task:
+                asyncio.create_task(background_task)
+            
+            # 6. Notify if multiple YT songs added (only for non-background playlist)
+            if len(songs) > 1 and not background_task:
                 await ctx.send_followup(f"📋 Added **{len(songs) - 1}** more song(s) to the queue.")
         else:
             if len(songs) == 1:
                 await ctx.send_followup(f"📋 **{songs[0].title}** added to queue.")
-            else:
+            elif not background_task:
                 await ctx.send_followup(f"📋 Added **{len(songs)}** song(s) to the queue.")
+            
+            if background_task:
+                 asyncio.create_task(background_task)
+
 
     # ─── Join ─────────────────────────────────────────────
 
@@ -480,13 +466,12 @@ class Music(commands.Cog, name="Music"):
             return
 
         if index > 1 and index - 1 < len(player.queue):
-            # Skip to a specific position — remove songs before that index
             for _ in range(index - 1):
                 skipped = player.queue.pop(0)
                 player.history.append(skipped)
 
         if ctx.voice_client and ctx.voice_client.is_playing():
-            ctx.voice_client.stop()  # This triggers the after callback → play_next
+            ctx.voice_client.stop()
         await ctx.respond("<:next:887770665250345021> Skipped!")
 
     # ─── Queue ────────────────────────────────────────────
@@ -517,7 +502,6 @@ class Music(commands.Cog, name="Music"):
         if len(pages) == 1:
             await ctx.respond(embed=pages[0])
         else:
-            # Simple paginator — send first page
             await ctx.respond(embed=pages[0])
 
     # ─── History ──────────────────────────────────────────
@@ -529,7 +513,7 @@ class Music(commands.Cog, name="Music"):
             await ctx.respond("No history yet!")
             return
 
-        recent = player.history[-10:]  # Last 10
+        recent = player.history[-10:]
         desc = "\n".join(
             f"**{i + 1}.** {s.title} — {s.requester.mention if s.requester else 'Unknown'}"
             for i, s in enumerate(reversed(recent))
@@ -612,7 +596,7 @@ class Music(commands.Cog, name="Music"):
 
         player.loop = not player.loop
         if player.loop:
-            player.queue_loop = False  # Disable queue loop when enabling loop
+            player.queue_loop = False
         status = "Enabled" if player.loop else "Disabled"
         await ctx.respond(f"<:Loop:956597783744372756>Looping {status}")
 
@@ -627,7 +611,7 @@ class Music(commands.Cog, name="Music"):
 
         player.queue_loop = not player.queue_loop
         if player.queue_loop:
-            player.loop = False  # Disable single loop when enabling queue loop
+            player.loop = False
         status = "Enabled" if player.queue_loop else "Disabled"
         await ctx.respond(f"<:Loop:956597783744372756>Queue Looping {status}")
 
@@ -657,7 +641,6 @@ class Music(commands.Cog, name="Music"):
         embed.set_thumbnail(url=spotify_result.album_cover_url)
         embed.add_field(name="Album", value=spotify_result.album, inline=True)
 
-        # Duration
         duration = spotify_result.duration
         minutes = duration.seconds // 60
         seconds = duration.seconds % 60
