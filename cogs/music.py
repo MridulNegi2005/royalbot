@@ -6,6 +6,7 @@ import subprocess
 import functools
 import re
 import time
+import aiohttp
 from yt_dlp import YoutubeDL
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -544,76 +545,106 @@ class Music(commands.Cog, name="Music"):
                 await ctx.send_followup("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
                 return
 
+            channel = ctx.author.voice.channel
+            print(f"[MUSIC DEBUG] Target channel: {channel.name} ({channel.id})")
+
             # Force-clean ANY existing voice client on this guild
             existing_vc = ctx.guild.voice_client
             if existing_vc:
-                print(f"[MUSIC DEBUG] Cleaning up existing guild voice_client: {existing_vc}, connected={existing_vc.is_connected()}")
+                print(f"[MUSIC DEBUG] Cleaning up stale guild voice_client: connected={existing_vc.is_connected()}")
                 try:
                     await existing_vc.disconnect(force=True)
+                    print("[MUSIC DEBUG] Stale VC disconnected")
                 except Exception as e:
-                    print(f"[MUSIC DEBUG] Error disconnecting existing vc: {e}")
-                # Give Discord a moment to process the disconnect
-                await asyncio.sleep(0.5)
+                    print(f"[MUSIC DEBUG] Error disconnecting stale vc: {e}")
+                await asyncio.sleep(1)
 
-            channel = ctx.author.voice.channel
-            print(f"[MUSIC DEBUG] Attempting to connect to channel: {channel.name} ({channel.id})")
+            # If guild still has a voice_client after disconnect, force cleanup internal state
+            if ctx.guild.voice_client:
+                print("[MUSIC DEBUG] Guild STILL has voice_client after disconnect! Forcing cleanup()")
+                try:
+                    ctx.guild.voice_client.cleanup()
+                except Exception as e:
+                    print(f"[MUSIC DEBUG] cleanup() error: {e}")
 
             vc = None
             last_error = None
-            for attempt in range(3):
-                print(f"[MUSIC DEBUG] Connection attempt {attempt + 1}/3")
+            for attempt in range(5):
+                print(f"[MUSIC DEBUG] Connection attempt {attempt + 1}/5")
                 try:
-                    vc = await asyncio.wait_for(channel.connect(), timeout=15)
-                    print(f"[MUSIC DEBUG] channel.connect() returned: {vc}")
-                    print(f"[MUSIC DEBUG] vc.is_connected() = {vc.is_connected()}")
-                    print(f"[MUSIC DEBUG] vc.channel = {vc.channel}")
-                    # connect() succeeded — trust it, don't second-guess is_connected()
+                    # IMPORTANT: Use py-cord's built-in timeout, NOT asyncio.wait_for!
+                    vc = await channel.connect(timeout=60.0, reconnect=True)
+                    print(f"[MUSIC DEBUG] connect() returned: {vc}")
+                    print(f"[MUSIC DEBUG] is_connected = {vc.is_connected()}")
                     break
                 except asyncio.TimeoutError:
-                    print(f"[MUSIC DEBUG] Connection attempt {attempt + 1} timed out")
+                    print(f"[MUSIC DEBUG] Attempt {attempt + 1} timed out")
                     last_error = "Timeout"
-                    # Clean up
                     if ctx.guild.voice_client:
                         try:
                             await ctx.guild.voice_client.disconnect(force=True)
                         except Exception:
                             pass
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1 + attempt * 2)
                     vc = None
                 except discord.ClientException as e:
-                    print(f"[MUSIC DEBUG] ClientException on attempt {attempt + 1}: {e}")
+                    print(f"[MUSIC DEBUG] ClientException: {e}")
                     last_error = str(e)
-                    # "Already connected" — use the existing one
                     if "already connected" in str(e).lower():
                         vc = ctx.guild.voice_client
                         if vc:
-                            print(f"[MUSIC DEBUG] Using existing guild voice_client after ClientException")
+                            print("[MUSIC DEBUG] Reusing existing voice_client")
                             break
-                    # Otherwise clean up and retry
                     if ctx.guild.voice_client:
                         try:
                             await ctx.guild.voice_client.disconnect(force=True)
                         except Exception:
                             pass
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1 + attempt * 2)
+                    vc = None
+                except (aiohttp.WSServerHandshakeError, aiohttp.ClientError) as e:
+                    # py-cord bug: VoiceClient.connect() retry loop only catches
+                    # ConnectionClosed and TimeoutError but NOT WSServerHandshakeError.
+                    # When this fires, the bot has already joined the VC at gateway
+                    # level but the voice WebSocket failed. We must fully clean up:
+                    #   1. voice_disconnect() to leave the VC at gateway level
+                    #   2. cleanup() to clear internal state
+                    print(f"[MUSIC DEBUG] Voice WS handshake error: {type(e).__name__}: {e}")
+                    last_error = str(e)
+                    stale = ctx.guild.voice_client
+                    if stale:
+                        try:
+                            await stale.voice_disconnect()
+                        except Exception:
+                            pass
+                        try:
+                            stale.cleanup()
+                        except Exception:
+                            pass
+                    await asyncio.sleep(1 + attempt * 2)
                     vc = None
                 except Exception as e:
-                    print(f"[MUSIC DEBUG] Unexpected error on attempt {attempt + 1}: {type(e).__name__}: {e}")
+                    print(f"[MUSIC DEBUG] Unexpected: {type(e).__name__}: {e}")
                     last_error = str(e)
-                    if ctx.guild.voice_client:
+                    stale = ctx.guild.voice_client
+                    if stale:
                         try:
-                            await ctx.guild.voice_client.disconnect(force=True)
+                            await stale.voice_disconnect()
                         except Exception:
                             pass
-                    await asyncio.sleep(1)
+                        try:
+                            stale.cleanup()
+                        except Exception:
+                            pass
+                    await asyncio.sleep(1 + attempt * 2)
                     vc = None
 
             if not vc:
-                print(f"[MUSIC DEBUG] All 3 attempts failed. Last error: {last_error}")
+                print(f"[MUSIC DEBUG] All attempts failed. Last error: {last_error}")
                 await ctx.send_followup("Failed to connect to voice channel. Please try again.")
                 return
 
-            print(f"[MUSIC DEBUG] Successfully connected! vc={vc}, is_connected={vc.is_connected()}")
+            print(f"[MUSIC DEBUG] Connected successfully!")
             await ctx.send_followup(f"<:call_connect:918875388527145091> Joined <#{channel.id}>")
 
         # 4. Play the first song(s)
