@@ -22,7 +22,7 @@ colorlog
 PyNaCl
 async-timeout
 emoji
-psycopg2
+psycopg2-binary
 flask
 speedtest-cli
 porter2stemmer
