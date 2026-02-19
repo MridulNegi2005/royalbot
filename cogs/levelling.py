@@ -264,21 +264,26 @@ class levelling(commands.Cog):
             small_font = ImageFont.FreeTypeFont("cogs/assests/ABeeZee-Regular.otf", 30)
             name_font = ImageFont.FreeTypeFont("cogs/assests/seguiemj.ttf", 35)
             # Level, rank, XP text
-            text_size = draw.textsize(str(level), font=big_font)
+            text_bbox = draw.textbbox((0, 0), str(level), font=big_font)
+            text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
             offset_x = 1000 - 15 - text_size[0]
             offset_y = 10
             draw.text((offset_x, offset_y), str(level), font=big_font, fill="#11ebf2")
-            text_size = draw.textsize("LEVEL", font=small_font)
+            text_bbox = draw.textbbox((0, 0), "LEVEL", font=small_font)
+            text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
             offset_x -= text_size[0] + 5
             draw.text((offset_x, offset_y + 27), "LEVEL", font=small_font, fill="#11ebf2")
-            text_size = draw.textsize(f"/ {human_format(interval_2)} XP", font=small_font)
+            text_bbox = draw.textbbox((0, 0), f"/ {human_format(interval_2)} XP", font=small_font)
+            text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
             offset_x = 980 - text_size[0]
             offset_y = 210 - text_size[1] - 10
             draw.text((offset_x, offset_y), f"/ {human_format(interval_2)} XP", font=xp_font, fill="#727175")
-            text_size = draw.textsize(f"{human_format(xp)}", font=xp_font)
+            text_bbox = draw.textbbox((0, 0), f"{human_format(xp)}", font=xp_font)
+            text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
             offset_x -= text_size[0] + 8
             draw.text((offset_x, offset_y), f"{human_format(xp)}", font=xp_font, fill="#fff")
-            text_size = draw.textsize(user.name, font=name_font)
+            text_bbox = draw.textbbox((0, 0), user.name, font=name_font)
+            text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
             offset_x = 265
             offset_y = 210 - text_size[1] - 5
             draw.text((offset_x, offset_y), user.name, font=name_font, fill='#FF4242', stroke_width=1, stroke_fill='#FF4242')
@@ -620,37 +625,44 @@ class levelling(commands.Cog):
         name = ImageFont.FreeTypeFont("cogs/assests/seguiemj.ttf", 35)
 
         # Placing Right Upper Part
-        text_size = draw.textsize(str(self.level), font=big_font)
+        text_bbox = draw.textbbox((0, 0), str(self.level), font=big_font)
+        text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
         offset_x = 1000 - 15 - text_size[0]
         offset_y = 10
         draw.text((offset_x, offset_y), str(self.level), font=big_font, fill="#11ebf2")
 
-        text_size = draw.textsize("LEVEL", font=small_font)
+        text_bbox = draw.textbbox((0, 0), "LEVEL", font=small_font)
+        text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
         offset_x -= text_size[0] + 5
         draw.text((offset_x, offset_y + 27), "LEVEL", font=small_font, fill="#11ebf2")
 
-        text_size = draw.textsize(f"#{rank}", font=big_font)
+        text_bbox = draw.textbbox((0, 0), f"#{rank}", font=big_font)
+        text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
         offset_x -= text_size[0] + 15
         draw.text((offset_x, offset_y), f"#{rank}", font=big_font, fill="#fff")
 
-        text_size = draw.textsize("RANK", font=small_font)
+        text_bbox = draw.textbbox((0, 0), "RANK", font=small_font)
+        text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
         offset_x -= text_size[0] + 5
         draw.text((offset_x, offset_y + 27), "RANK", font=small_font, fill="#fff")
 
-        text_size = draw.textsize(f"/ {human_format(self.interval_2)} XP", font=small_font)
+        text_bbox = draw.textbbox((0, 0), f"/ {human_format(self.interval_2)} XP", font=small_font)
+        text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
 
         offset_x = 980 - text_size[0]
         offset_y = bar_offset_y - text_size[1] - 10
 
         draw.text((offset_x, offset_y), f"/ {human_format(self.interval_2)} XP", font=xp_font, fill="#727175")
 
-        text_size = draw.textsize(f"{human_format(xp)}", font=xp_font)
+        text_bbox = draw.textbbox((0, 0), f"{human_format(xp)}", font=xp_font)
+        text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
         offset_x -= text_size[0] + 8
         draw.text((offset_x, offset_y), f"{human_format(xp)}", font=xp_font, fill="#fff")
 
 
         # Name
-        text_size = draw.textsize(user.name, font=name)
+        text_bbox = draw.textbbox((0, 0), user.name, font=name)
+        text_size = (text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1])
 
         offset_x = bar_offset_x
         offset_y = bar_offset_y - text_size[1] - 5

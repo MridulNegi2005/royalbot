@@ -13,6 +13,10 @@ import psycopg2
 import sqlite3
 import socket
 import heroku3
+import platform
+
+if platform.system() == 'Windows':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 #KEY='f69844b0-e62b-4448-83d5-914184c2905b'
 #cloud = heroku3.from_key(KEY)
