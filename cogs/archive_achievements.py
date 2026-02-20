@@ -3,13 +3,14 @@ import mysql.connector
 from discord.ext import commands
 import mysql.connector
 from discord.utils import get
+import os
 title = "Cosmic Bot"
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 mydb =  mysql.connector.connect(
-        host="bg3kcezlyolvdh8jsli1-mysql.services.clever-cloud.com",user="ukjpsz0im2qbzryk",
-        password="KHg97QcVBmVpxnKOxiSA",
-        database="bg3kcezlyolvdh8jsli1")
+        host=os.getenv("MYSQL_HOST"),user=os.getenv("MYSQL_USER"),
+        password=os.getenv("MYSQL_PASSWORD"),
+        database=os.getenv("MYSQL_DATABASE"))
 query = mydb.cursor()
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 achievements = {

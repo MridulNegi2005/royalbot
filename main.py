@@ -14,11 +14,13 @@ import sqlite3
 import socket
 import heroku3
 import platform
+from dotenv import load_dotenv
+load_dotenv()
 
 if platform.system() == 'Windows':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-#KEY='f69844b0-e62b-4448-83d5-914184c2905b'
+#KEY=os.getenv('HEROKU_API_KEY')
 #cloud = heroku3.from_key(KEY)
 #app = cloud.apps()['royal-disc-bot']
 #web = app.process_formation()['web']
@@ -27,11 +29,11 @@ whitelist=[767591735295213580]
 def get_connection():
     try:
         return psycopg2.connect(
-            database="postgres",
-            user="postgres",
-            password="CEBYsadMjKqaCJJjGbUYY2gf5UxF2fGxAhDrGcDD",
-            host="35.223.191.80",
-            port=5432,
+            database=os.getenv("POSTGRES_DB"),
+            user=os.getenv("POSTGRES_USER"),
+            password=os.getenv("POSTGRES_PASSWORD"),
+            host=os.getenv("POSTGRES_HOST"),
+            port=int(os.getenv("POSTGRES_PORT", 5432)),
 			sslmode="require"
         )
     except:
@@ -667,4 +669,4 @@ def convert(seconds):
     return "%02d min %02d sec" % (minutes, seconds)
 
 #https://discord.com/oauth2/authorize?client_id=823112553051193357&scope=bot&permissions=4278190079
-bot.run('ODIzMTEyNTUzMDUxMTkzMzU3.YFcFTQ.UDs5w88vKWGavCurUZw_T2_GfZI')
+bot.run(os.getenv('DISCORD_BOT_TOKEN'))

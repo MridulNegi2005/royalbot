@@ -16,7 +16,8 @@ import io,requests
 from easy_pil import Editor, Canvas, load_image_async, Font,Text
 
 # ─── DATABASE CONFIG ─────────────────────────────────────────
-DSN = "dbname=postgres user=postgres password=CEBYsadMjKqaCJJjGbUYY2gf5UxF2fGxAhDrGcDD host=35.223.191.80 port=5432 sslmode=require"
+import os
+DSN = f"dbname={os.getenv('POSTGRES_DB')} user={os.getenv('POSTGRES_USER')} password={os.getenv('POSTGRES_PASSWORD')} host={os.getenv('POSTGRES_HOST')} port={os.getenv('POSTGRES_PORT', 5432)} sslmode=require"
 """
 625 : Trophy Road Brawler
 2500 : Rare Brawler

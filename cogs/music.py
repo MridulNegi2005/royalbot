@@ -6,6 +6,7 @@ import subprocess
 import functools
 import re
 import time
+import os
 import aiohttp
 from yt_dlp import YoutubeDL
 import spotipy
@@ -13,8 +14,8 @@ from spotipy.oauth2 import SpotifyClientCredentials
 
 
 # Spotify API
-SPOTIFY_CLIENT_ID = "7bff23b27d3244f28fcae1a938ab89b6"
-SPOTIFY_CLIENT_SECRET = "6ee356b084e445bbbf878dfa1f5c26fd"
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
     client_id=SPOTIFY_CLIENT_ID,
     client_secret=SPOTIFY_CLIENT_SECRET

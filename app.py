@@ -1,8 +1,11 @@
 from flask import Flask, redirect, url_for, request,render_template
 app = Flask(__name__)
 import time
+import os
+from dotenv import load_dotenv
+load_dotenv()
 import psycopg2
-con = psycopg2.connect('postgres://balxuonbzytruy:2be081d80c21d0869d500f997e19ff385ad5278d020402608fc23ac1f8d71bc6@ec2-52-73-184-24.compute-1.amazonaws.com:5432/des0u9rjq76pq', sslmode='require')
+con = psycopg2.connect(os.getenv('HEROKU_POSTGRES_URI'), sslmode='require')
 query = con.cursor()
 @app.route('/')
 def hello_world():

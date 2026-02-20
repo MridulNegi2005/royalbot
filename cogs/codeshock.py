@@ -5,14 +5,15 @@ from discord.ext import commands
 import time
 from discord.ext import tasks
 import psycopg2
+import os
 def get_connection():
     try:
         return psycopg2.connect(
-            database="postgres",
-            user="postgres",
-            password="CEBYsadMjKqaCJJjGbUYY2gf5UxF2fGxAhDrGcDD",
-            host="35.223.191.80",
-            port=5432,
+            database=os.getenv("POSTGRES_DB"),
+            user=os.getenv("POSTGRES_USER"),
+            password=os.getenv("POSTGRES_PASSWORD"),
+            host=os.getenv("POSTGRES_HOST"),
+            port=int(os.getenv("POSTGRES_PORT", 5432)),
 			sslmode="require"
         )
     except Exception as e:

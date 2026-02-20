@@ -10,8 +10,9 @@ import requests
 import random
 import base64,json
 import heroku3
+import os
 
-#KEY='f69844b0-e62b-4448-83d5-914184c2905b'
+#KEY=os.getenv('HEROKU_API_KEY')
 #cloud = heroku3.from_key(KEY)
 #app = cloud.apps()['royal-disc-bot']
 #web = app.process_formation()['web']
@@ -163,7 +164,7 @@ class tag(discord.ui.Modal):
         )
     async def callback(self, interaction: discord.Interaction):
         try:
-            headers = {"Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiIsImtpZCI6IjI4YTMxOGY3LTAwMDAtYTFlYi03ZmExLTJjNzQzM2M2Y2NhNSJ9.eyJpc3MiOiJzdXBlcmNlbGwiLCJhdWQiOiJzdXBlcmNlbGw6Z2FtZWFwaSIsImp0aSI6IjAxM2I2ODNjLTAwN2UtNGI3Yy05ZjI0LWRjYjBiN2QzMGZiMiIsImlhdCI6MTY4NDI5MTY3NCwic3ViIjoiZGV2ZWxvcGVyL2Q5MmEzMjJlLTAzNDQtNWYzMS1jODQ5LWE0YjU0YzQ1MWUxNSIsInNjb3BlcyI6WyJicmF3bHN0YXJzIl0sImxpbWl0cyI6W3sidGllciI6ImRldmVsb3Blci9zaWx2ZXIiLCJ0eXBlIjoidGhyb3R0bGluZyJ9LHsiY2lkcnMiOlsiNDUuNzkuMjE4Ljc5Il0sInR5cGUiOiJjbGllbnQifV19.IpzvftdcLePP8wVd4D5kgSY-3PNXtvigd584IS42-hCEBi1IAfcup9KC0FcU9_kzQ6n5n9WlgeBc02ZUcJ20Gg"}
+            headers = {"Authorization": f"Bearer {os.getenv('BRAWL_STARS_API_TOKEN')}"}
             bstag = self.children[0].value
             bstag = bstag.replace('#','')
             response = requests.get(f'https://bsproxy.royaleapi.dev/v1/players/%23{bstag}', headers=headers)
@@ -291,7 +292,7 @@ class giveaway(commands.Cog):
                 winner_text2+=','
             if tag==1:
                 winner_text2+=f'<@{x}>'
-                headers = {"Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiIsImtpZCI6IjI4YTMxOGY3LTAwMDAtYTFlYi03ZmExLTJjNzQzM2M2Y2NhNSJ9.eyJpc3MiOiJzdXBlcmNlbGwiLCJhdWQiOiJzdXBlcmNlbGw6Z2FtZWFwaSIsImp0aSI6IjAxM2I2ODNjLTAwN2UtNGI3Yy05ZjI0LWRjYjBiN2QzMGZiMiIsImlhdCI6MTY4NDI5MTY3NCwic3ViIjoiZGV2ZWxvcGVyL2Q5MmEzMjJlLTAzNDQtNWYzMS1jODQ5LWE0YjU0YzQ1MWUxNSIsInNjb3BlcyI6WyJicmF3bHN0YXJzIl0sImxpbWl0cyI6W3sidGllciI6ImRldmVsb3Blci9zaWx2ZXIiLCJ0eXBlIjoidGhyb3R0bGluZyJ9LHsiY2lkcnMiOlsiNDUuNzkuMjE4Ljc5Il0sInR5cGUiOiJjbGllbnQifV19.IpzvftdcLePP8wVd4D5kgSY-3PNXtvigd584IS42-hCEBi1IAfcup9KC0FcU9_kzQ6n5n9WlgeBc02ZUcJ20Gg"}
+                headers = {"Authorization": f"Bearer {os.getenv('BRAWL_STARS_API_TOKEN')}"}
         
                 response = requests.get(f'https://bsproxy.royaleapi.dev/v1/players/%23{entries[x]}', headers=headers)
                 winner_text+=f'- <@{x}>\n  - Ingame name : {response.json()["name"]}\n  - Brawl Stars Tag : #{entries[x]}'
@@ -391,7 +392,7 @@ async def end2(self,message_id):
             winner_text2+=','
         if tag==1:
             winner_text2+=f'<@{x}>'
-            headers = {"Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiIsImtpZCI6IjI4YTMxOGY3LTAwMDAtYTFlYi03ZmExLTJjNzQzM2M2Y2NhNSJ9.eyJpc3MiOiJzdXBlcmNlbGwiLCJhdWQiOiJzdXBlcmNlbGw6Z2FtZWFwaSIsImp0aSI6IjAxM2I2ODNjLTAwN2UtNGI3Yy05ZjI0LWRjYjBiN2QzMGZiMiIsImlhdCI6MTY4NDI5MTY3NCwic3ViIjoiZGV2ZWxvcGVyL2Q5MmEzMjJlLTAzNDQtNWYzMS1jODQ5LWE0YjU0YzQ1MWUxNSIsInNjb3BlcyI6WyJicmF3bHN0YXJzIl0sImxpbWl0cyI6W3sidGllciI6ImRldmVsb3Blci9zaWx2ZXIiLCJ0eXBlIjoidGhyb3R0bGluZyJ9LHsiY2lkcnMiOlsiNDUuNzkuMjE4Ljc5Il0sInR5cGUiOiJjbGllbnQifV19.IpzvftdcLePP8wVd4D5kgSY-3PNXtvigd584IS42-hCEBi1IAfcup9KC0FcU9_kzQ6n5n9WlgeBc02ZUcJ20Gg"}
+            headers = {"Authorization": f"Bearer {os.getenv('BRAWL_STARS_API_TOKEN')}"}
         
             response = requests.get(f'https://bsproxy.royaleapi.dev/v1/players/%23{entries[x]}', headers=headers)
             winner_text+=f'- <@{x}>\n  - Ingame name : {response.json()["name"]}\n  - Brawl Stars Tag : #{entries[x]}'

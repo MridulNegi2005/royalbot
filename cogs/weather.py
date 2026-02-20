@@ -1,8 +1,9 @@
 import discord
 from discord.ext import commands
 import requests
+import os
 from discord.commands import slash_command,SlashCommandGroup,permissions,Option
-api_key = "9ccb707ce80672014364dd1b8d6d7e44"
+api_key = os.getenv("OPENWEATHER_API_KEY")
 base_url = "http://api.openweathermap.org/data/2.5/weather?"
 
 class Weather(commands.Cog):

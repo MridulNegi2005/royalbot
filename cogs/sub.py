@@ -11,21 +11,22 @@ from dateutil import parser
 import datetime
 import cogs.giveaway as giveaway
 import psycopg2
+import os
 def get_connection():
     try:
         return psycopg2.connect(
-            database="postgres",
-            user="postgres",
-            password="CEBYsadMjKqaCJJjGbUYY2gf5UxF2fGxAhDrGcDD",
-            host="35.223.191.80",
-            port=5432,
+            database=os.getenv("POSTGRES_DB"),
+            user=os.getenv("POSTGRES_USER"),
+            password=os.getenv("POSTGRES_PASSWORD"),
+            host=os.getenv("POSTGRES_HOST"),
+            port=int(os.getenv("POSTGRES_PORT", 5432)),
 			sslmode="require"
         )
     except:
         return False
 con2 = get_connection()
 query2 = con.cursor()
-api_key = "AIzaSyCzeRWqsVGVUzBGhC-m030YGF-EA0G91QI"
+api_key = os.getenv("YOUTUBE_API_KEY")
 channel_id = "UCEZqqxc-NMD7uGCod8N0gOw"
 upload_id="UUEZqqxc-NMD7uGCod8N0gOw"
 class sub(commands.Cog):

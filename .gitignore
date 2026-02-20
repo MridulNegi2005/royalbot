@@ -3,3 +3,10 @@
 /cogs/__pycache__/
 /.vscode/
 cogs/secret.py
+
+# Sensitive files - NEVER commit these
+.env
+firestore.json
+cogs/firestore.json
+.google-cookie
+.cache

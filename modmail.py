@@ -3,6 +3,8 @@ import discord
 from discord.ext import commands
 from discord.interactions import InteractionResponse
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import json
 import asyncio
 sent_users=[]
@@ -241,4 +243,4 @@ async def support(message):
 				
 
 #https://discord.com/api/oauth2/authorize?client_id=847160870000656425&permissions=0&scope=bot
-bot.run('ODQ3MTYwODcwMDAwNjU2NDI1.YK6CCg.t3cF4fxEBd-v2RgfVWZt3zSQwZQ')
+bot.run(os.getenv('DISCORD_MODMAIL_TOKEN'))
