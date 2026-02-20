@@ -1,7 +1,7 @@
 /virtual-env/
 /__pycache__/
 /cogs/__pycache__/
-/.vscode/
+.vscode/
 cogs/secret.py
 
 # Sensitive files - NEVER commit these
