@@ -491,7 +491,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Play ─────────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Searches for the song and plays it if available.")
+    @slash_command(description="Searches for the song and plays it if available.")
     async def play(self, ctx, query: Option(str, "Song name or Song/Playlist link from YT or Spotify")):
         await ctx.defer()
         await ctx.send_followup(f"Searching for **{query}**...")
@@ -675,7 +675,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Join ─────────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Joins the VC you are currently in.")
+    @slash_command(description="Joins the VC you are currently in.")
     async def join(self, ctx):
         if not ctx.author.voice or not ctx.author.voice.channel:
             await ctx.respond("<:call_disconnect:918875403567910933> You are not connected to a Voice Channel.")
@@ -688,7 +688,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Leave ────────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Disconnects the bot from VC")
+    @slash_command(description="Disconnects the bot from VC")
     async def leave(self, ctx):
         if ctx.voice_client:
             player = get_player(ctx)
@@ -703,7 +703,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Now Playing ──────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Shows the currently playing song with controls.")
+    @slash_command(description="Shows the currently playing song with controls.")
     async def now_playing(self, ctx):
         player = get_player(ctx)
         if not player or not player.current:
@@ -716,7 +716,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Skip ─────────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Skips the song")
+    @slash_command(description="Skips the song")
     async def skip(self, ctx, index: Option(int, "Song index number", required=False, default=1)):
         player = get_player(ctx)
         if not player or not player.current:
@@ -738,7 +738,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Queue ────────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Shows the song queue")
+    @slash_command(description="Shows the song queue")
     async def queue(self, ctx):
         player = get_player(ctx)
         if not player or not player.queue:
@@ -768,7 +768,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── History ──────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Shows recently played songs")
+    @slash_command(description="Shows recently played songs")
     async def history(self, ctx):
         player = get_player(ctx)
         if not player or not player.history:
@@ -790,7 +790,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Delete ───────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Deletes a particular song from the queue")
+    @slash_command(description="Deletes a particular song from the queue")
     async def delete(self, ctx, index: Option(str, "Write 'all' to clear or put a number to delete particular song")):
         player = get_player(ctx)
         if not player:
@@ -812,7 +812,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Pause ────────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Pauses the song")
+    @slash_command(description="Pauses the song")
     async def pause(self, ctx):
         if ctx.voice_client and ctx.voice_client.is_playing():
             ctx.voice_client.pause()
@@ -822,7 +822,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Resume ───────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Resumes the song")
+    @slash_command(description="Resumes the song")
     async def resume(self, ctx):
         if ctx.voice_client and ctx.voice_client.is_paused():
             ctx.voice_client.resume()
@@ -832,7 +832,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Volume ───────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Changes the volume of the player.")
+    @slash_command(description="Changes the volume of the player.")
     async def volume(self, ctx, volume: Option(int, "Volume number [0-100]")):
         player = get_player(ctx)
         if not player:
@@ -849,7 +849,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Loop ─────────────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Toggles loop")
+    @slash_command(description="Toggles loop")
     async def loop(self, ctx):
         player = get_player(ctx)
         if not player:
@@ -864,7 +864,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Queue Loop ───────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Toggles queue looping")
+    @slash_command(description="Toggles queue looping")
     async def queueloop(self, ctx):
         player = get_player(ctx)
         if not player:
@@ -879,7 +879,7 @@ class Music(commands.Cog, name="Music"):
 
     # ─── Spotify Info ─────────────────────────────────────
 
-    @slash_command(guild_ids=[767591734841835540, 1102496776700833825], description="Shows Spotify song details, user is listening to")
+    @slash_command(description="Shows Spotify song details, user is listening to")
     async def spotifyinfo(self, ctx, member: Option(discord.Member, "Specify member", required=False, default=None)):
         member = member if member else ctx.author
         spotify_result = next(

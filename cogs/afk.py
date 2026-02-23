@@ -11,7 +11,7 @@ temp=[]
 class afk(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-    @slash_command(guild_ids=[767591734841835540],default_permission=False)
+    @slash_command(default_permission=False)
     @discord.default_permissions(ban_members=True,)
     async def afk(self,ctx,message:Option(str,"AFK Message",required=False,default="")):
         message=message+f" *-*<t:{int(datetime.now().timestamp())}:R>"

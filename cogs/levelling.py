@@ -47,7 +47,7 @@ class Themes(discord.ui.Button):
             await interaction.response.send_message(f"Error updating theme: {e}",ephemeral=True)
 
 class levelling(commands.Cog):
-    @slash_command(guild_ids=[767591734841835540], description="Set your theme for level card!")
+    @slash_command(description="Set your theme for level card!")
     async def theme(self, ctx):
         """
         Combined theme command for testing: shows rank cards, current level, and theme/overlay buttons.
@@ -423,7 +423,7 @@ class levelling(commands.Cog):
             self.counter=len(self.lb)-1
             await interaction.response.edit_message(embed=self.lb[-1],view=self)
 
-    @slash_command(guild_ids=[767591734841835540],default_permission=False)
+    @slash_command(default_permission=False)
     @discord.default_permissions(ban_members=True,)
     async def add_xp(self,ctx,user:Option(discord.Member,"User to give xp to"),xp:Option(int,"Amount of xp to be added")):
         try:
@@ -449,7 +449,7 @@ class levelling(commands.Cog):
         except Exception as e:
             await ctx.respond(f"Database error: {e}")
 
-    @slash_command(guild_ids=[767591734841835540],default_permission=False)
+    @slash_command(default_permission=False)
     @discord.default_permissions(ban_members=True,)
     async def remove_xp(self,ctx,user:Option(discord.Member,"User to remove xp from"),xp:Option(int,"Amount of xp to be subtracted")):
         try:
@@ -520,7 +520,7 @@ class levelling(commands.Cog):
         val=(value,ctx.author.id)
         self.query.execute(sql,val)
         self.con.commit()'''
-    @slash_command(guild_ids=[767591734841835540],description="Check your level")
+    @slash_command(description="Check your level")
     async def level(self,ctx,user:Option(discord.Member,"Member whose rank you wanted to see",required=False,default=None)):
         await ctx.defer()
         if user==None:user=ctx.author
@@ -675,7 +675,7 @@ class levelling(commands.Cog):
             image_binary.seek(0)
             await ctx.send_followup(file=discord.File(fp=image_binary, filename='Level.png'))
 
-    @slash_command(guild_ids=[767591734841835540])
+    @slash_command()
     async def leaderboard(self,ctx):
         await ctx.defer()
         try:

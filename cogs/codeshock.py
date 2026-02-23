@@ -29,7 +29,7 @@ class codeshock(commands.Cog):
         self.con = con
 
     supporter = SlashCommandGroup("supporter", "Themes related commands")
-    @supporter.command(guild_ids=[767591734841835540],description="Give Code Shock role",default_permission=False)
+    @supporter.command(description="Give Code Shock role",default_permission=False)
     @discord.default_permissions(administrator=True,)
     async def give(self,ctx,user:Option(discord.Member,"Member you wanted to give code shock role"),duration:Option(str,"Enter Duration for code shock role. Seperate each time values with a space. Eg :1d 12h")):
         if not ctx.author.guild_permissions.administrator:
@@ -67,7 +67,7 @@ class codeshock(commands.Cog):
         except Exception as e:
             await user.remove_roles(role)
             await ctx.respond(f"An error occured while adding <@&1191376926263230526> role to <@{user.id}>!\nError : {e}",ephemeral=True)
-    @supporter.command(guild_ids=[767591734841835540],description="Remove Code Shock role",default_permission=False)
+    @supporter.command(description="Remove Code Shock role",default_permission=False)
     @discord.default_permissions(administrator=True,)
     async def remove(self,ctx,user:Option(discord.Member,"Member you wanted to remove code shock role from"),duration:Option(str,"Enter Duration for code shock role to remove. Seperate each time values with a space. Eg :1d 12h")):
         if not ctx.author.guild_permissions.administrator:
@@ -97,7 +97,7 @@ class codeshock(commands.Cog):
             return
         else:
             await ctx.respond(f"<@{user.id}> doesn't have <@&1191376926263230526> role!",ephemeral=True)
-    @supporter.command(guild_ids=[767591734841835540],description="Know duration of code shock role")
+    @supporter.command(description="Know duration of code shock role")
     async def duration(self,ctx,user:Option(discord.Member,"Member you wanted to know the duration of code shock role")):
         sql = 'SELECT * FROM "temprole" WHERE "user"=%s AND "role"=%s'
         val = (user.id,1191376926263230526)

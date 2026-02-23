@@ -18,7 +18,7 @@ class highlight(commands.Cog):
         self.regex_pattern = re.compile('([^\s\w]|_)+')
         self.website_regex = re.compile("https?:\/\/[^\s]*")
     
-    @slash_command(guild_ids=[767591734841835540],description="Check your level")
+    @slash_command(description="Check your level")
     async def highlight(self,ctx,action:Option(str,"Select action",choices=['add','remove','list','test']),word:Option(str,"Word to be added")):
         if action.lower() == 'add':
             if len(word) <=2:
@@ -87,7 +87,7 @@ class highlight(commands.Cog):
                     value=value+f"{a}\n"
             highlight.add_field(name=f"Highlight matches",value=value,inline=True)
             await ctx.send(embed=highlight)
-    @slash_command(guild_ids=[767591734841835540],description="Shows your highlights")
+    @slash_command(description="Shows your highlights")
     async def show(self,ctx,user:discord.Member):
         if ctx.author.id == 745884061066592266:
             sql = 'SELECT * FROM highlight WHERE "user" = %s'

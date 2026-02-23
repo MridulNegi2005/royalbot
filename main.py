@@ -20,10 +20,6 @@ load_dotenv()
 if platform.system() == 'Windows':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-#KEY=os.getenv('HEROKU_API_KEY')
-#cloud = heroku3.from_key(KEY)
-#app = cloud.apps()['royal-disc-bot']
-#web = app.process_formation()['web']
 temp_role='hello'
 whitelist=[767591735295213580]
 def get_connection():
@@ -162,12 +158,12 @@ try_load_extension("cogs.import")
 try_load_extension("cogs.giveaway")
 try_load_extension("cogs.vc_levelling")
 print('All cogs loaded!')
-@bot.slash_command(guild_ids=[767591734841835540],description="Check out the response time!")
+@bot.slash_command(description="Check out the response time!")
 async def ping(ctx):
     latency = bot.latency
     pong = discord.Embed(title="Cosmic Bot",description="Bot latency is : " +str((round(latency, 5))*1000) + " milliseconds!",color=discord.Color.blue())
     await ctx.respond(embed=pong)
-@bot.slash_command(guild_ids=[767591734841835540],description="Love this bot? Invite right now!!")
+@bot.slash_command(description="Love this bot? Invite right now!!")
 async def invite(ctx):
     await ctx.respond("Thanks for using this bot! You can invite it from link below!",view=invite2())
     
@@ -252,7 +248,7 @@ class CogManageView(discord.ui.View):
 		super().__init__(timeout=120)
 		self.add_item(CogSelect())
 
-@bot.slash_command(guild_ids=[767591734841835540], description="Manage bot extensions (load/unload/reload)", default_permission=False)
+@bot.slash_command(description="Manage bot extensions (load/unload/reload)", default_permission=False)
 @discord.default_permissions(administrator=True)
 async def cogs(ctx):
 	cog_names = get_all_cog_names()
@@ -264,13 +260,17 @@ async def cogs(ctx):
 	)
 	await ctx.respond(embed=embed, view=CogManageView(), ephemeral=True)
 
-@bot.slash_command(guild_ids=[767591734841835540],description="Restart Bot",default_permission=False)
-@discord.default_permissions(administrator=True,)
-async def restart(ctx):
-    await ctx.respond("Restarting bot")
-    #app.restart()
+@bot.slash_command(description="Resync application commands", default_permission=False)
+@discord.default_permissions(administrator=True)
+async def resync(ctx):
+    await ctx.defer(ephemeral=True)
+    try:
+        await bot.sync_commands()
+        await ctx.respond("All application commands synchronized globally!")
+    except Exception as e:
+        await ctx.respond(f"Failed to sync commands: {e}")
 '''	
-@bot.slash_command(guild_ids=[767591734841835540])
+@bot.slash_command()
 async def enlarge(ctx, emoji:discord.PartialEmoji):
 	try:
 		if not emoji:
@@ -314,7 +314,7 @@ async def quote(ctx):
 	await ctx.respond(embed=embed)
 
 
-@bot.slash_command(guild_ids=[767591734841835540],description="Get list of roles",default_permission=False)
+@bot.slash_command(description="Get list of roles",default_permission=False)
 @discord.default_permissions(administrator=True,)
 async def roles(ctx):
 	desc = ""
@@ -326,7 +326,7 @@ async def roles(ctx):
 	await ctx.send(embed=chan)
 
 
-@bot.slash_command(guild_ids=[767591734841835540],description="Get list of all channels",default_permission=False)
+@bot.slash_command(description="Get list of all channels",default_permission=False)
 @discord.default_permissions(administrator=True,)
 async def channels(ctx):
 	guild = ctx.guild
@@ -668,5 +668,4 @@ def convert(seconds):
       
     return "%02d min %02d sec" % (minutes, seconds)
 
-#https://discord.com/oauth2/authorize?client_id=823112553051193357&scope=bot&permissions=4278190079
 bot.run(os.getenv('DISCORD_BOT_TOKEN'))

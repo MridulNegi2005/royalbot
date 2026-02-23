@@ -61,7 +61,7 @@ class christmas(commands.Cog):
                     button.style = discord.ButtonStyle.red
                     button.disabled=True
                 await interaction.response.edit_message(embed=self.lb[self.counter],view=self)
-    """@slash_command(guild_ids=[767591734841835540],default_permission=False)
+    """@slash_command(default_permission=False)
     @permissions.has_role(767591734850879495)
     async def event(self,ctx,value:Option(str,"Start/End Event",choices=["Start","End"])):
         if value=="Start":
@@ -70,7 +70,7 @@ class christmas(commands.Cog):
         if value=="End":
             self.status=False
             await ctx.respond("Event ended and commands disabled!!",ephemeral=True)
-    @slash_command(guild_ids=[767591734841835540],default_permission=False)
+    @slash_command(default_permission=False)
     @permissions.has_role(767591734850879495)
     async def reset(self,ctx,user:Option(discord.Member,"User whose xp you want to reset.",required=False,Default=None)):
         if user == None:
@@ -94,7 +94,7 @@ class christmas(commands.Cog):
             self.query.execute(sql,val)
             self.con.commit()
             await ctx.respond(f"Resetted xp for {user.display_name}!")
-    @slash_command(guild_ids=[767591734841835540],description="Check your level for christmas event")
+    @slash_command(description="Check your level for christmas event")
     @permissions.has_role(767591734850879495)
     async def level(self,ctx,user:Option(discord.Member,"Member whose rank you wanted to see",required=False,default=None)):
         if user==None:user=ctx.author

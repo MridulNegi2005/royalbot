@@ -9,7 +9,7 @@ class fake(commands.Cog):
         self.bot = bot
 
 
-    @slash_command(guild_ids=[767591734841835540],description="Send message as a particular user!")
+    @slash_command(description="Send message as a particular user!")
     async def fake(self,ctx,user:Option(discord.Member,"User you want to disguise."),message:Option(str,"Message to send!"),channel:Option(discord.TextChannel,"Channel to send message to",required=False,default=None)):
         chan=channel
         member=user

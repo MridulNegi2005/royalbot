@@ -153,7 +153,7 @@ class buttonrole1(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @slash_command(guild_ids=[767591734841835540],default_permission=False)
+    @slash_command(default_permission=False)
     @discord.default_permissions(administrator=True,)
     async def publish(self,ctx):
         view = Role_cat()

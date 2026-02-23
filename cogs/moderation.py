@@ -78,7 +78,7 @@ class Moderation(commands.Cog):
             pass
 
     # ── /slowmode ────────────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     @discord.default_permissions(ban_members=True)
     async def slowmode(self, ctx,
                        seconds: discord.Option(int, description="Slowmode time in seconds. '0' for none")):
@@ -99,7 +99,7 @@ class Moderation(commands.Cog):
             await ctx.respond(f"An error occurred: {e}", ephemeral=True)
 
     # ── /say ─────────────────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     @discord.default_permissions(ban_members=True)
     async def say(self, ctx,
                   message: discord.Option(str, description="Text message to send"),
@@ -123,7 +123,7 @@ class Moderation(commands.Cog):
             await ctx.respond(f"An error occurred: {e}", ephemeral=True)
 
     # ── /nick ────────────────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     @discord.default_permissions(ban_members=True)
     async def nick(self, ctx,
                    member: discord.Option(discord.Member, description="User whose nickname to change"),
@@ -150,7 +150,7 @@ class Moderation(commands.Cog):
             await ctx.respond(f"An error occurred: {e}", ephemeral=True)
 
     # ── /kick ────────────────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     @discord.default_permissions(ban_members=True)
     async def kick(self, ctx,
                    member: discord.Option(discord.Member, description="Member to kick"),
@@ -176,7 +176,7 @@ class Moderation(commands.Cog):
             await ctx.respond(f"An error occurred: {e}", ephemeral=True)
 
     # ── /mute (timeout) ─────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     @discord.default_permissions(ban_members=True)
     async def mute(self, ctx,
                    member: discord.Option(discord.Member, description="Member to mute"),
@@ -211,7 +211,7 @@ class Moderation(commands.Cog):
             await ctx.respond(f"An error occurred: {e}", ephemeral=True)
 
     # ── /unmute ──────────────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     @discord.default_permissions(ban_members=True)
     async def unmute(self, ctx,
                      member: discord.Option(discord.Member, description="Member to unmute"),
@@ -234,7 +234,7 @@ class Moderation(commands.Cog):
             await ctx.respond(f"An error occurred: {e}", ephemeral=True)
 
     # ── /ban ─────────────────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     @discord.default_permissions(ban_members=True)
     async def ban(self, ctx,
                   member: discord.Option(discord.Member, description="Member to ban"),
@@ -270,7 +270,7 @@ class Moderation(commands.Cog):
             await ctx.respond(f"An error occurred: {e}", ephemeral=True)
 
     # ── /warn ────────────────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     @discord.default_permissions(ban_members=True)
     async def warn(self, ctx,
                    member: discord.Option(discord.Member, description="Member to warn"),
@@ -301,7 +301,7 @@ class Moderation(commands.Cog):
             await ctx.respond(f"Failed to warn user: {e}", ephemeral=True)
 
     # ── /clear_warn ──────────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     @discord.default_permissions(ban_members=True)
     async def clear_warn(self, ctx,
                          member: discord.Option(discord.Member, description="Member whose warn(s) to clear"),
@@ -345,7 +345,7 @@ class Moderation(commands.Cog):
             await ctx.respond(f"Failed to clear warning: {e}", ephemeral=True)
 
     # ── /warnings ────────────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     async def warnings(self, ctx,
                        member: discord.Option(discord.Member, description="Member to check (leave empty for self)",
                                               required=False, default=None)):
@@ -399,7 +399,7 @@ class Moderation(commands.Cog):
             await ctx.respond(f"Failed to fetch warnings: {e}", ephemeral=True)
 
     # ── /purge ───────────────────────────────────────────────
-    @slash_command(guild_ids=[GUILD_ID])
+    @slash_command()
     @discord.default_permissions(ban_members=True)
     async def purge(self, ctx,
                     limit: discord.Option(int, description="Number of messages to purge")):

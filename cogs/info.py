@@ -10,7 +10,7 @@ class Info(Cog):
 	def __init__(self, bot):
 		self.bot = bot
 
-	@slash_command(guild_ids=[767591734841835540],description="Test the bot's internet speed!")
+	@slash_command(description="Test the bot's internet speed!")
 	async def speedtest(self,ctx):
 		msg = await ctx.respond("Calculating <a:loading:886509142934683678>")
 		s = speedtest.Speedtest()
@@ -18,7 +18,7 @@ class Info(Cog):
 		upload = (s.upload()//10000)/100
 		await ctx.send(f"Downloading Speed: {download} Mbps\nUploading Speed: {upload} Mbps")
 		
-	@slash_command(guild_ids=[767591734841835540],description="Check information regarding a user")
+	@slash_command(description="Check information regarding a user")
 	async def user_info(self, ctx, target:Option(discord.Member,"Member whose info you wanted to check",required=False)):
 		if target==None:target=ctx.author
 
@@ -43,7 +43,7 @@ class Info(Cog):
 
 		await ctx.respond(embed=embed)
 
-	@slash_command(guild_ids=[767591734841835540],description="Check the server's info")
+	@slash_command(description="Check the server's info")
 	async def server_info(self, ctx):
 		embed = Embed(title=f'<:verified:884020441373605958> "{ctx.guild.name}" Server information',
 					  timestamp=datetime.utcnow())

@@ -162,7 +162,7 @@ class Verify(discord.ui.View):
 class Welcome(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-    @slash_command(guild_ids=[767591734841835540],description="Initiate Verification Process here",default_permission=False)
+    @slash_command(description="Initiate Verification Process here",default_permission=False)
     @discord.default_permissions(administrator=True,)
     async def verify(self,ctx):
         embed=discord.Embed(title="<:verify:1006910059101560873> Verification Required!",description="To prevent server raids and spam accounts, We require you to pass this short verification test.",color=0xff4242)

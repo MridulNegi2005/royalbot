@@ -521,7 +521,7 @@ class VCLevelling(commands.Cog):
 
     # ─── SLASH COMMANDS ───────────────────────────────────────
 
-    @slash_command(guild_ids=[GUILD_ID], description="Check your VC level!")
+    @slash_command(description="Check your VC level!")
     async def vclevel(self, ctx, user: Option(discord.Member, "Member whose VC rank you want to see", required=False, default=None)):
         await ctx.defer()
         if user is None:
@@ -561,7 +561,7 @@ class VCLevelling(commands.Cog):
         file = await self._generate_vc_level_card(user, xp, level, rank, percentage, interval_2, theme, overlay_option)
         await ctx.send_followup(file=file)
 
-    @slash_command(guild_ids=[GUILD_ID], description="View detailed VC stats!")
+    @slash_command(description="View detailed VC stats!")
     async def vcstats(self, ctx, user: Option(discord.Member, "Member whose VC stats you want to see", required=False, default=None)):
         await ctx.defer()
         if user is None:
@@ -607,7 +607,7 @@ class VCLevelling(commands.Cog):
 
         await ctx.send_followup(embed=embed)
 
-    @slash_command(guild_ids=[GUILD_ID], description="View VC XP leaderboard!")
+    @slash_command(description="View VC XP leaderboard!")
     async def vcleaderboard(self, ctx):
         await ctx.defer()
 
