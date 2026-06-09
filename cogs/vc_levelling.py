@@ -402,7 +402,8 @@ class VCLevelling(commands.Cog):
                                     announce_channel = ch
                                     break
                         if announce_channel:
-                            await announce_channel.send(f"Congratulations {member.mention}, you just reached VC level {level_after}!")
+                            del_after = None if level_after % 5 == 0 else 60
+                            await announce_channel.send(f"Congratulations {member.mention}, you just reached VC level {level_after}!", delete_after=del_after)
                     except Exception:
                         pass
 
