@@ -10,3 +10,7 @@ firestore.json
 cogs/firestore.json
 .google-cookie
 .cache
+
+# Lavalink
+lavalink/plugins/
+lavalink/logs/

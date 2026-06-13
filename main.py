@@ -14,6 +14,7 @@ import sqlite3
 import socket
 import heroku3
 import platform
+import wavelink
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -125,6 +126,20 @@ class Help(discord.ui.View):
 async def on_ready():
 	bot.load_extension("cogs.sub")
 	print('We have logged in as {0.user}'.format(bot))
+
+	# Connect to Lavalink node
+	try:
+		nodes = [
+			wavelink.Node(
+				identifier="CosmicNode",
+				uri=os.getenv("LAVALINK_URI", "http://127.0.0.1:2333"),
+				password=os.getenv("LAVALINK_PASSWORD", "youshallnotpass"),
+			)
+		]
+		await wavelink.Pool.connect(nodes=nodes, client=bot)
+		print('[main.py] Connected to Lavalink node!')
+	except Exception as e:
+		print(f'[main.py] Failed to connect to Lavalink: {e}')
 import sys
 def try_load_extension(name):
 	try:
