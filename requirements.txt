@@ -32,5 +32,8 @@ python-dotenv
 gunicorn
 heroku3
 yt-dlp
+# IMPORTANT install order: py-cord MUST be installed BEFORE wavelink.
+# Run: pip install -r requirements.txt
+#      pip install wavelink --no-deps   (avoids pulling discord.py over pycord)
+py-cord[voice]>=2.8.0
 wavelink
-git+https://github.com/Pycord-Development/pycord
