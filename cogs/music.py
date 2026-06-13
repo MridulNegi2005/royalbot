@@ -257,7 +257,7 @@ class NowPlayingView(discord.ui.View):
     async def _check_vc(self, interaction: discord.Interaction) -> bool:
         """Verify the user is in the same VC as the bot."""
         player = self._get_player(interaction)
-        if not player or not player.connected:
+        if not player or not player.is_connected():
             await interaction.response.send_message("Bot is not connected to a voice channel.", ephemeral=True)
             return False
         if not interaction.user.voice or not interaction.user.voice.channel:
@@ -279,9 +279,9 @@ class NowPlayingView(discord.ui.View):
         # Pop from history and insert at front of queue, then skip current
         prev_song = player.history.pop()
         player.queue_list.insert(0, prev_song)
-        # Stop current to trigger play_next via the track_end event
-        await player.stop()
+        # Respond BEFORE stopping — player.stop() may interfere with interaction state
         await interaction.response.send_message(f"Playing previous: **{prev_song.title}**", ephemeral=True)
+        await player.stop()
 
     @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, row=0)
     async def pause_resume_button(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -292,15 +292,15 @@ class NowPlayingView(discord.ui.View):
             await interaction.response.send_message("Nothing is playing.", ephemeral=True)
             return
         if player.playing and not player.paused:
-            await player.pause(True)
             button.label = "Resume"
             button.style = discord.ButtonStyle.success
             await interaction.response.edit_message(view=self)
+            await player.pause(True)
         elif player.paused:
-            await player.pause(False)
             button.label = "Pause"
             button.style = discord.ButtonStyle.primary
             await interaction.response.edit_message(view=self)
+            await player.pause(False)
         else:
             await interaction.response.send_message("Nothing to pause or resume.", ephemeral=True)
 
@@ -315,18 +315,20 @@ class NowPlayingView(discord.ui.View):
         if player.song_loop:
             await interaction.response.send_message("Disable loop first.", ephemeral=True)
             return
-        await player.stop()
+        # Respond BEFORE stopping
         await interaction.response.send_message("Skipped!", ephemeral=True)
+        await player.stop()
 
     @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, row=0)
     async def stop_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
         player = self._get_player(interaction)
+        # Respond BEFORE disconnecting
+        await interaction.response.send_message("Stopped and disconnected.", ephemeral=True)
         if player:
             player.clear_queue()
             await player.disconnect()
-        await interaction.response.send_message("Stopped and disconnected.", ephemeral=True)
         self.stop()
 
     @discord.ui.button(label="Loop: Off", style=discord.ButtonStyle.secondary, row=1)
@@ -407,7 +409,7 @@ class Music(commands.Cog, name="Music"):
         channel = ctx.author.voice.channel
 
         # 2. Connect or get existing player
-        player = self._get_player(ctx)
+        player: CosmicPlayer | None = self._get_player(ctx)
         if not player:
             try:
                 player = await channel.connect(cls=CosmicPlayer)
@@ -417,7 +419,7 @@ class Music(commands.Cog, name="Music"):
                 print(f"[MUSIC] Failed to connect: {e}")
                 await ctx.send_followup("Failed to connect to voice channel. Please try again.")
                 return
-        elif not player.connected:
+        elif not player.is_connected():
             try:
                 await player.connect(timeout=60.0)
                 player.text_channel = ctx.channel
@@ -472,7 +474,7 @@ class Music(commands.Cog, name="Music"):
             return
 
         player = self._get_player(ctx)
-        if player and player.connected:
+        if player and player.is_connected():
             await player.move_to(ctx.author.voice.channel)
         else:
             await ctx.author.voice.channel.connect(cls=CosmicPlayer)
