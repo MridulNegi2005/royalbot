@@ -38,11 +38,10 @@ plugins:
     clients:
       - MUSIC
       - WEB
-      - ANDROID_TESTSUITE
-    # Uncomment and add your refresh token to avoid YouTube rate limits:
-    # oauth:
-    #   enabled: true
-    #   refreshToken: "YOUR_REFRESH_TOKEN"
+    oauth:
+      enabled: true
+      # Force login prompt:
+      skipInitialization: false
 
   lavasrc:
     providers:
