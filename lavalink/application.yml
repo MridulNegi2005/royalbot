@@ -38,7 +38,8 @@ plugins:
     clients:
       - MUSIC
       - ANDROID_MUSIC
-      - TVHTML5_SIMPLY
+      - TV
+      - ANDROID_VR
       - WEB
     oauth:
       enabled: true
