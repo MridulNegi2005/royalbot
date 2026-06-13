@@ -40,8 +40,7 @@ plugins:
       - WEB
     oauth:
       enabled: true
-      # Force login prompt:
-      skipInitialization: false
+      refreshToken: "${YOUTUBE_OAUTH_REFRESH_TOKEN}"
 
   lavasrc:
     providers:
