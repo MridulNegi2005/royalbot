@@ -46,8 +46,8 @@ plugins:
 
   lavasrc:
     providers:
-      - 'ytsearch:"%ISRC%"'       # Search by ISRC for exact match
-      - "ytsearch:%QUERY%"         # Fallback to YouTube search
+      - 'ytmsearch:"%ISRC%"'       # Search YouTube Music by ISRC for exact match
+      - "ytmsearch:%QUERY%"        # Fallback to YouTube Music search
     sources:
       spotify: true
       applemusic: false
