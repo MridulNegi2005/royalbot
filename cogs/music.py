@@ -223,7 +223,6 @@ def build_now_playing_container(player: CosmicPlayer) -> discord.ui.Container:
     if not song:
         return discord.ui.Container(
             discord.ui.TextDisplay("### ⏹️  Nothing playing"),
-            color=discord.Color(0x2b2d31),
         )
 
     elapsed = int((player.position or 0) / 1000)
@@ -245,16 +244,16 @@ def build_now_playing_container(player: CosmicPlayer) -> discord.ui.Container:
     artist = f"\n-# 🎤 {song.uploader}" if song.uploader else ""
     glyph = "⏸" if player.paused else "▶"
 
-    container = discord.ui.Container(color=discord.Color(0x1DB954))
-    container.add_item(discord.ui.TextDisplay(f"### {status}"))
+    container = discord.ui.Container()
 
-    # Large album art
+    # Header + title/artist with small album art beside the text
+    head = discord.ui.TextDisplay(f"### {status}\n{title}{artist}")
     if song.thumbnail:
-        gallery = discord.ui.MediaGallery()
-        gallery.add_item(song.thumbnail)
-        container.add_item(gallery)
+        container.add_item(discord.ui.Section(head, accessory=discord.ui.Thumbnail(song.thumbnail)))
+    else:
+        container.add_item(head)
 
-    container.add_item(discord.ui.TextDisplay(title + artist))
+    container.add_separator(divider=True)
     container.add_item(discord.ui.TextDisplay(f"{glyph} {_progress_bar(elapsed, total)}"))
     container.add_separator(divider=True)
     container.add_item(discord.ui.TextDisplay(
