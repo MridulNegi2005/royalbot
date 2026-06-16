@@ -242,12 +242,11 @@ def build_now_playing_container(player: CosmicPlayer) -> discord.ui.Container:
     requester = song.requester.mention if song.requester else "Unknown"
 
     title = f"## [{song.title}]({song.url})" if song.url else f"## {song.title}"
-    artist = f"\n-# {song.uploader}" if song.uploader else ""
+    artist = f"\n-# 🎤 {song.uploader}" if song.uploader else ""
+    glyph = "⏸" if player.paused else "▶"
 
-    container = discord.ui.Container(
-        discord.ui.TextDisplay(f"**{status}**"),
-        color=discord.Color(0x1DB954),
-    )
+    container = discord.ui.Container(color=discord.Color(0x1DB954))
+    container.add_item(discord.ui.TextDisplay(f"### {status}"))
 
     # Large album art
     if song.thumbnail:
@@ -256,11 +255,12 @@ def build_now_playing_container(player: CosmicPlayer) -> discord.ui.Container:
         container.add_item(gallery)
 
     container.add_item(discord.ui.TextDisplay(title + artist))
-    container.add_item(discord.ui.TextDisplay(_progress_bar(elapsed, total)))
+    container.add_item(discord.ui.TextDisplay(f"{glyph} {_progress_bar(elapsed, total)}"))
     container.add_separator(divider=True)
     container.add_item(discord.ui.TextDisplay(
-        f"-# Requested by {requester}  •  Queue: {queue_len}  •  Loop: {loop_text}"
+        f"-# 👤 {requester}　　🎧 {queue_len} in queue　　🔁 {loop_text}"
     ))
+    container.add_separator(divider=False)
     container.add_item(NowPlayingControls())
     return container
 
@@ -278,7 +278,7 @@ class NowPlayingControls(discord.ui.ActionRow):
     async def _check_vc(self, interaction: discord.Interaction) -> bool:
         """Verify the user is in the same VC as the bot."""
         player = self._get_player(interaction)
-        if not player or not player.is_connected():
+        if not player or not player.connected:
             await interaction.response.send_message("Bot is not connected to a voice channel.", ephemeral=True)
             return False
         if not interaction.user.voice or not interaction.user.voice.channel:
@@ -289,7 +289,7 @@ class NowPlayingControls(discord.ui.ActionRow):
             return False
         return True
 
-    @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.secondary, custom_id="np_prev")
     async def prev_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
@@ -302,7 +302,7 @@ class NowPlayingControls(discord.ui.ActionRow):
         await interaction.response.send_message(f"Playing previous: **{prev_song.title}**", ephemeral=True)
         await player.stop()
 
-    @discord.ui.button(emoji="⏯️", style=discord.ButtonStyle.primary)
+    @discord.ui.button(emoji="⏯️", style=discord.ButtonStyle.success, custom_id="np_pause")
     async def pause_resume_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
@@ -313,7 +313,7 @@ class NowPlayingControls(discord.ui.ActionRow):
         await player.pause(not player.paused)
         await interaction.response.edit_message(view=NowPlayingView(player))
 
-    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary, custom_id="np_skip")
     async def skip_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
@@ -327,7 +327,7 @@ class NowPlayingControls(discord.ui.ActionRow):
         await interaction.response.send_message("Skipped!", ephemeral=True)
         await player.stop()
 
-    @discord.ui.button(emoji="⏹️", style=discord.ButtonStyle.danger)
+    @discord.ui.button(emoji="⏹️", style=discord.ButtonStyle.danger, custom_id="np_stop")
     async def stop_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
@@ -344,7 +344,7 @@ class NowPlayingControls(discord.ui.ActionRow):
                 except Exception:
                     pass
 
-    @discord.ui.button(emoji="\U0001f501", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="\U0001f501", style=discord.ButtonStyle.secondary, custom_id="np_loop")
     async def loop_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
@@ -431,7 +431,7 @@ class Music(commands.Cog, name="Music"):
                 print(f"[MUSIC] Failed to connect: {e}")
                 await ctx.send_followup("Failed to connect to voice channel. Please try again.")
                 return
-        elif not player.is_connected():
+        elif not player.connected:
             try:
                 await player.connect(timeout=60.0)
                 player.text_channel = ctx.channel
@@ -485,7 +485,7 @@ class Music(commands.Cog, name="Music"):
             return
 
         player = self._get_player(ctx)
-        if player and player.is_connected():
+        if player and player.connected:
             await player.move_to(ctx.author.voice.channel)
         else:
             await ctx.author.voice.channel.connect(cls=CosmicPlayer)
