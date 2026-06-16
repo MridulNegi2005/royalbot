@@ -66,15 +66,15 @@ def _is_url(query: str) -> bool:
 
 # ─── Progress Bar Helper ──────────────────────────────────
 
-def _progress_bar(elapsed: int, total: int, length: int = 12) -> str:
-    """Build a text-based progress bar like: ▬▬▬▬🔘▬▬▬▬▬ 2:30 / 5:00"""
+def _progress_bar(elapsed: int, total: int, length: int = 20) -> str:
+    """Seek-bar style line like: `2:30` ━━━━━●─────────── `4:48`"""
     if total <= 0:
-        return f"{'▬' * length}  {_fmt_time(elapsed)} / LIVE"
+        return f"`{_fmt_time(elapsed)}` {'━' * length} `LIVE`"
 
-    ratio = min(elapsed / total, 1.0)
-    pos = int(ratio * length)
-    bar = '▬' * pos + '🔘' + '▬' * (length - pos)
-    return f"{bar}  {_fmt_time(elapsed)} / {_fmt_time(total)}"
+    ratio = min(max(elapsed / total, 0.0), 1.0)
+    pos = int(ratio * (length - 1))
+    bar = '━' * pos + '●' + '─' * (length - 1 - pos)
+    return f"`{_fmt_time(elapsed)}` {bar} `{_fmt_time(total)}`"
 
 
 def _fmt_time(seconds: int) -> str:
@@ -113,6 +113,9 @@ class CosmicPlayer(wavelink.Player):
         self.queue_loop: bool = False
         self.text_channel: discord.TextChannel | None = None
         self.playback_start_time: float | None = None
+        # Persistent "now playing" card + background task that advances its progress bar
+        self.np_message: discord.Message | None = None
+        self._np_task: asyncio.Task | None = None
 
     async def play_song(self, song: Song):
         """Play a Song object on this player."""
@@ -168,6 +171,38 @@ class CosmicPlayer(wavelink.Player):
         self.song_loop = False
         self.queue_loop = False
         self.playback_start_time = None
+        self.stop_np_updater()
+
+    # ─── Now Playing card updater ─────────────────────────
+    def attach_now_playing(self, message: discord.Message):
+        """Track a now-playing card message and start advancing its progress bar."""
+        self.np_message = message
+        self.start_np_updater()
+
+    def start_np_updater(self):
+        self.stop_np_updater()
+        self._np_task = asyncio.create_task(self._np_updater())
+
+    def stop_np_updater(self):
+        if self._np_task and not self._np_task.done():
+            self._np_task.cancel()
+        self._np_task = None
+
+    async def _np_updater(self):
+        """Re-render the now-playing card every few seconds so the bar moves."""
+        try:
+            while True:
+                await asyncio.sleep(8)
+                if self.np_message is None or self.current_song is None:
+                    break
+                if self.paused:
+                    continue
+                try:
+                    await self.np_message.edit(view=NowPlayingView(self))
+                except Exception:
+                    pass
+        except asyncio.CancelledError:
+            pass
 
 
 # Global reference for the NowPlayingView to access players
@@ -180,79 +215,65 @@ def _get_cosmic_player(guild: discord.Guild) -> CosmicPlayer | None:
     return None
 
 
-# ─── Now Playing Embed Builder ────────────────────────────
+# ─── Now Playing Card (Components V2) ─────────────────────
 
-def build_now_playing_embed(player: CosmicPlayer, *, for_command: bool = False) -> discord.Embed:
-    """Build a Spotify-card-style now-playing embed."""
+def build_now_playing_container(player: CosmicPlayer) -> discord.ui.Container:
+    """Build a Spotify-style now-playing card using Components V2."""
     song = player.current_song
     if not song:
-        return discord.Embed(title="Nothing Playing", color=0x2b2d31)
+        return discord.ui.Container(
+            discord.ui.TextDisplay("### ⏹️  Nothing playing"),
+            color=discord.Color(0x2b2d31),
+        )
 
-    elapsed = int(time.time() - player.playback_start_time) if player.playback_start_time else 0
+    elapsed = int((player.position or 0) / 1000)
+    total = int(song.duration)
 
-    # Dark theme embed
-    embed = discord.Embed(color=0x1DB954)
+    status = "⏸️  Paused" if player.paused else "▶️  Now playing"
 
-    # Title & description
-    embed.title = song.title
-    if song.uploader:
-        if song.uploader_url:
-            embed.description = f"[{song.uploader}]({song.uploader_url})"
-        else:
-            embed.description = song.uploader
+    if player.song_loop:
+        loop_text = "\U0001f502 Song"
+    elif player.queue_loop:
+        loop_text = "\U0001f501 Queue"
+    else:
+        loop_text = "Off"
+
+    queue_len = len(player.queue_list)
+    requester = song.requester.mention if song.requester else "Unknown"
+
+    title = f"## [{song.title}]({song.url})" if song.url else f"## {song.title}"
+    artist = f"\n-# {song.uploader}" if song.uploader else ""
+
+    container = discord.ui.Container(
+        discord.ui.TextDisplay(f"**{status}**"),
+        color=discord.Color(0x1DB954),
+    )
 
     # Large album art
     if song.thumbnail:
-        embed.set_thumbnail(url=song.thumbnail)
+        gallery = discord.ui.MediaGallery()
+        gallery.add_item(song.thumbnail)
+        container.add_item(gallery)
 
-    # Progress bar
-    progress = _progress_bar(elapsed, int(song.duration))
-    embed.add_field(name="\u200b", value=f"```{progress}```", inline=False)
-
-    # Info row
-    requester_text = song.requester.mention if song.requester else "Unknown"
-    embed.add_field(name="Requested by", value=requester_text, inline=True)
-
-    # Loop status
-    if player.song_loop:
-        loop_text = "Song Loop"
-    elif player.queue_loop:
-        loop_text = "Queue Loop"
-    else:
-        loop_text = "Off"
-    embed.add_field(name="Loop", value=loop_text, inline=True)
-
-    # Queue info
-    queue_len = len(player.queue_list)
-    embed.add_field(name="Queue", value=f"{queue_len} song{'s' if queue_len != 1 else ''}", inline=True)
-
-    # Views
-    if song.view_count:
-        embed.add_field(name="\u200b", value=f"<:views:918875283526942790> {_format_views(int(song.view_count))}", inline=True)
-
-    # URL
-    if song.url:
-        embed.add_field(name="Link", value=f"[Open]({song.url})", inline=True)
-
-    embed.set_footer(text="Cosmic Bot Music")
-
-    return embed
+    container.add_item(discord.ui.TextDisplay(title + artist))
+    container.add_item(discord.ui.TextDisplay(_progress_bar(elapsed, total)))
+    container.add_separator(divider=True)
+    container.add_item(discord.ui.TextDisplay(
+        f"-# Requested by {requester}  •  Queue: {queue_len}  •  Loop: {loop_text}"
+    ))
+    container.add_item(NowPlayingControls())
+    return container
 
 
-# ─── Now Playing View (Buttons) ──────────────────────────
+# ─── Now Playing Controls (Components V2 ActionRow) ───────
 
-class NowPlayingView(discord.ui.View):
-    """Interactive music controls attached to the now-playing message."""
+class NowPlayingControls(discord.ui.ActionRow):
+    """Media controls rendered inside the now-playing Container."""
 
-    def __init__(self, guild_id: int):
-        super().__init__(timeout=None)
-        self.guild_id = guild_id
-
-    def _get_player(self, interaction: discord.Interaction) -> CosmicPlayer | None:
+    @staticmethod
+    def _get_player(interaction: discord.Interaction) -> CosmicPlayer | None:
         guild = interaction.guild
-        if guild:
-            return _get_cosmic_player(guild)
-        return None
+        return _get_cosmic_player(guild) if guild else None
 
     async def _check_vc(self, interaction: discord.Interaction) -> bool:
         """Verify the user is in the same VC as the bot."""
@@ -268,7 +289,7 @@ class NowPlayingView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(label="Prev", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.secondary)
     async def prev_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
@@ -276,35 +297,23 @@ class NowPlayingView(discord.ui.View):
         if not player or not player.history:
             await interaction.response.send_message("No previous song in history.", ephemeral=True)
             return
-        # Pop from history and insert at front of queue, then skip current
         prev_song = player.history.pop()
         player.queue_list.insert(0, prev_song)
-        # Respond BEFORE stopping — player.stop() may interfere with interaction state
         await interaction.response.send_message(f"Playing previous: **{prev_song.title}**", ephemeral=True)
         await player.stop()
 
-    @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(emoji="⏯️", style=discord.ButtonStyle.primary)
     async def pause_resume_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
         player = self._get_player(interaction)
-        if not player:
+        if not player or not player.current_song:
             await interaction.response.send_message("Nothing is playing.", ephemeral=True)
             return
-        if player.playing and not player.paused:
-            button.label = "Resume"
-            button.style = discord.ButtonStyle.success
-            await interaction.response.edit_message(view=self)
-            await player.pause(True)
-        elif player.paused:
-            button.label = "Pause"
-            button.style = discord.ButtonStyle.primary
-            await interaction.response.edit_message(view=self)
-            await player.pause(False)
-        else:
-            await interaction.response.send_message("Nothing to pause or resume.", ephemeral=True)
+        await player.pause(not player.paused)
+        await interaction.response.edit_message(view=NowPlayingView(player))
 
-    @discord.ui.button(label="Skip", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary)
     async def skip_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
@@ -315,23 +324,27 @@ class NowPlayingView(discord.ui.View):
         if player.song_loop:
             await interaction.response.send_message("Disable loop first.", ephemeral=True)
             return
-        # Respond BEFORE stopping
         await interaction.response.send_message("Skipped!", ephemeral=True)
         await player.stop()
 
-    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(emoji="⏹️", style=discord.ButtonStyle.danger)
     async def stop_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
         player = self._get_player(interaction)
-        # Respond BEFORE disconnecting
         await interaction.response.send_message("Stopped and disconnected.", ephemeral=True)
         if player:
+            player.stop_np_updater()
+            np = player.np_message
             player.clear_queue()
             await player.disconnect()
-        self.stop()
+            if np:
+                try:
+                    await np.edit(view=NowPlayingView(player))
+                except Exception:
+                    pass
 
-    @discord.ui.button(label="Loop: Off", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(emoji="\U0001f501", style=discord.ButtonStyle.secondary)
     async def loop_button(self, button: discord.ui.Button, interaction: discord.Interaction):
         if not await self._check_vc(interaction):
             return
@@ -339,25 +352,24 @@ class NowPlayingView(discord.ui.View):
         if not player:
             await interaction.response.send_message("No active player.", ephemeral=True)
             return
-
         # Cycle: Off -> Song -> Queue -> Off
         if not player.song_loop and not player.queue_loop:
-            player.song_loop = True
-            player.queue_loop = False
-            button.label = "Loop: Song"
-            button.style = discord.ButtonStyle.success
+            player.song_loop, player.queue_loop = True, False
         elif player.song_loop:
-            player.song_loop = False
-            player.queue_loop = True
-            button.label = "Loop: Queue"
-            button.style = discord.ButtonStyle.primary
+            player.song_loop, player.queue_loop = False, True
         else:
-            player.song_loop = False
-            player.queue_loop = False
-            button.label = "Loop: Off"
-            button.style = discord.ButtonStyle.secondary
+            player.song_loop, player.queue_loop = False, False
+        await interaction.response.edit_message(view=NowPlayingView(player))
 
-        await interaction.response.edit_message(view=self)
+
+# ─── Now Playing View ─────────────────────────────────────
+
+class NowPlayingView(discord.ui.DesignerView):
+    """Holds the now-playing Container and its controls."""
+
+    def __init__(self, player: CosmicPlayer):
+        super().__init__(timeout=None)
+        self.add_item(build_now_playing_container(player))
 
 
 # ─── Music Cog ────────────────────────────────────────────
@@ -453,9 +465,8 @@ class Music(commands.Cog, name="Music"):
         first_played = await player.add_and_play(songs)
 
         if first_played:
-            embed = build_now_playing_embed(player)
-            view = NowPlayingView(ctx.guild.id)
-            await ctx.send_followup(embed=embed, view=view)
+            msg = await ctx.send_followup(view=NowPlayingView(player))
+            player.attach_now_playing(msg)
 
             if len(songs) > 1:
                 await ctx.send_followup(f"Added **{len(songs) - 1}** more song(s) to the queue.")
@@ -502,9 +513,8 @@ class Music(commands.Cog, name="Music"):
             await ctx.respond("No song is being played currently!")
             return
 
-        embed = build_now_playing_embed(player, for_command=True)
-        view = NowPlayingView(ctx.guild.id)
-        await ctx.respond(embed=embed, view=view)
+        await ctx.respond(view=NowPlayingView(player))
+        player.attach_now_playing(await ctx.interaction.original_response())
 
     # ─── Skip ─────────────────────────────────────────────
 
