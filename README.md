@@ -1,68 +1,67 @@
-# Royalbot (Cosmic Bot)
+# Cosmic Bot
 
-Royalbot is a feature-rich, multi-purpose Discord bot built with Python. Originally developed for the "Cosmic's Universe" server, it includes a wide range of modules spanning from moderation and levelling to high-quality music streaming and a dedicated modmail system.
+Cosmic Bot is a Discord bot for community servers. It combines music, ranking, moderation, and
+engagement features in one application. The bot has run a live community server since 2023. It
+contains about 6,000 lines of Python in 25 modular cogs and more than 70 commands.
 
 ## Features
 
-- **Music System**: High-quality music streaming using Lavalink and Wavelink.
-- **Moderation**: Comprehensive moderation tools to keep your community safe.
-- **Levelling**: Both text and voice chat (VC) XP tracking and levelling systems.
-- **Modmail**: A dedicated ticketing system allowing users to privately contact server staff.
-- **Giveaways**: Automated giveaway creation and management.
-- **Economy & Games**: Casino, games, and an economy system to keep the community engaged.
-- **Web Dashboard Integration**: A Flask-based web backend for potential dashboard features and statistics.
-- **Starboard**: Highlight the best messages in your server.
+### Music
+- The bot plays audio through a Lavalink node with the wavelink client.
+- It supports a queue, a loop mode, and a play history.
+- It shows a "now playing" message and updates the progress bar in real time.
 
-## Tech Stack
+### Ranking
+- The bot awards experience points for chat messages and voice activity.
+- It generates rank cards as images with Pillow.
+- A user unlocks card themes at higher levels.
 
-- **Language**: Python 3
-- **Discord Library**: [Pycord](https://pycord.dev/)
-- **Audio Library**: [Wavelink](https://github.com/PythonistaGuild/Wavelink) (Requires Lavalink)
-- **Database**: PostgreSQL (main data) and SQLite (help menus)
-- **Web Server**: Flask
-- **Other Services**: Firebase Admin
+### Moderation and safety
+- The bot provides mute, ban, and slow-mode commands.
+- It records each moderation action in an embed log.
+- A captcha verification step protects the server against bot raids.
+
+### Engagement and administration
+- The bot runs giveaways, welcome messages, button roles, a starboard, and a casino game.
+- An administrator loads, unloads, or reloads each cog without a restart.
+- A small Flask dashboard shows the bot status.
+
+## Architecture
+- The bot uses asynchronous Python. This keeps the event loop responsive under load.
+- The database layer changed from synchronous `psycopg2` to asynchronous pooling with `aiopg` and
+  `asyncpg`.
+- PostgreSQL stores the ranking and economy data. SQLite stores the help data.
+- A custom `wavelink.Player` subclass holds the queue, the history, and the loop state.
+- The bot reads all credentials from environment variables. Secrets stay in a `.env` file.
+
+## Technology
+- Python, py-cord
+- Lavalink, wavelink
+- PostgreSQL (aiopg, asyncpg), SQLite
+- Pillow
+- Flask
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.8 or higher
-- A PostgreSQL database
-- A running Lavalink server for music capabilities
-
-### Setup Instructions
-
-1. **Clone the repository:**
+1. Clone the repository.
    ```bash
-   git clone https://github.com/MridulNegi2005/royalbot.git
+   git clone https://github.com/MridulNegi2005/royalbot
    cd royalbot
    ```
-
-2. **Install dependencies:**
-   Due to dependency conflicts between Pycord and Wavelink, strict installation order is required:
+2. Create a virtual environment and install the dependencies.
    ```bash
+   python -m venv .venv
+   .venv\Scripts\activate
    pip install -r requirements.txt
-   pip install wavelink --no-deps
+   ```
+3. Copy the environment template and set the values.
+   ```bash
+   cp .env.example .env
+   ```
+   Set `DISCORD_BOT_TOKEN`, the `POSTGRES_*` values, the `LAVALINK_*` values, and the API keys.
+4. Start the bot.
+   ```bash
+   python main.py
    ```
 
-3. **Configure Environment Variables:**
-   Create a `.env` file in the root directory and add the following variables:
-   ```env
-   POSTGRES_DB=your_database_name
-   POSTGRES_USER=your_username
-   POSTGRES_PASSWORD=your_password
-   POSTGRES_HOST=your_host
-   POSTGRES_PORT=5432
-   LAVALINK_URI=http://127.0.0.1:2333
-   LAVALINK_PASSWORD=youshallnotpass
-   ```
-   *(Note: The bot also utilizes a `firestore.json` file for Firebase integration if needed).*
-
-4. **Run the bot:**
-   The bot consists of multiple entry points depending on the service you are running.
-   - For the main bot: `python main.py`
-   - For the modmail system: `python modmail.py`
-   - For the web server: `python app.py`
-
-## Note
-This bot was originally tailored for a specific community. Some features, roles, and channel configurations are hardcoded and may require modification to work seamlessly in a new server environment.
+The music feature needs a Lavalink node. Set `LAVALINK_URI` and `LAVALINK_PASSWORD` in the `.env` file.
