@@ -46,34 +46,91 @@ def format_duration(seconds: int) -> str:
     return " ".join(parts)
 
 
+# ── Components V2 cards ──────────────────────────────────────
+# A view holding V2 components cannot be sent with content or an embed, so each
+# card below carries the whole message.
+
+TEXT_BUDGET = 3600
+WARN_REASON_CAP = 300
+MAX_WARNS_SHOWN = 15
+
+
+def _card(color):
+    view = discord.ui.DesignerView(timeout=None)
+    container = discord.ui.Container(color=color)
+    view.add_item(container)
+    return view, container
+
+
+def log_card(*, title: str, description: str, color: int = 0x2f3136,
+             moderator: discord.Member = None, target: discord.Member | discord.User = None,
+             fields: list[tuple[str, str]] | None = None):
+    view, container = _card(color)
+    head = discord.ui.TextDisplay(f"### {title}\n{description}")
+    if target:
+        container.add_section(head, accessory=discord.ui.Thumbnail(target.display_avatar.url))
+    else:
+        container.add_item(head)
+    if fields:
+        body = "\n".join(f"**{name}**\n{value}" for name, value in fields)
+        container.add_separator(divider=True)
+        container.add_text(body[:TEXT_BUDGET])
+    stamp = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    container.add_separator(divider=False)
+    container.add_text(f"-# {moderator} · <t:{stamp}:f>" if moderator else f"-# <t:{stamp}:f>")
+    return view
+
+
+def warn_card(member, moderator, reason):
+    view, container = _card(member.color)
+    container.add_text(
+        f"{member.mention} has been warned by {moderator.mention}.\n"
+        f"**Reason:** {reason[:TEXT_BUDGET]}")
+    return view
+
+
+def warnings_card(user, entries, total=None):
+    """entries: (warn_id, reason, moderator name, date), newest first."""
+    total = len(entries) if total is None else total
+    view, container = _card(0xe83535)
+    container.add_section(
+        discord.ui.TextDisplay(f"### {total} Warning(s)\n{user.name} (`{user.id}`)"),
+        accessory=discord.ui.Thumbnail(user.display_avatar.url))
+
+    if not entries:
+        container.add_separator(divider=True)
+        container.add_text("No warnings found.")
+        return view
+
+    container.add_separator(divider=True)
+    used = 0
+    shown = 0
+    for warn_id, reason, mod_name, date in entries[:MAX_WARNS_SHOWN]:
+        block = (f"**Warn #{warn_id}** · by {mod_name} · {date}\n"
+                 f"{reason[:WARN_REASON_CAP]}")
+        if used + len(block) > TEXT_BUDGET:
+            break
+        container.add_text(block)
+        used += len(block)
+        shown += 1
+    if shown < total:
+        container.add_separator(divider=False)
+        container.add_text(f"-# {total - shown} more warning(s) not shown.")
+    return view
+
+
 class Moderation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     # ── Logging helper ───────────────────────────────────────
-    async def _log(self, *, title: str, description: str, color: int = 0x2f3136,
-                   moderator: discord.Member = None, target: discord.Member | discord.User = None,
-                   fields: list[tuple[str, str]] | None = None):
-        """Send a mod-action embed to the configured log channel."""
+    async def _log(self, **kwargs):
+        """Send a mod-action card to the configured log channel."""
         channel = self.bot.get_channel(MOD_LOG_CHANNEL_ID)
         if channel is None:
             return  # channel not found — silently skip
-
-        embed = discord.Embed(
-            title=title,
-            description=description,
-            color=color,
-            timestamp=datetime.datetime.now(datetime.timezone.utc),
-        )
-        if moderator:
-            embed.set_author(name=str(moderator), icon_url=moderator.display_avatar.url)
-        if target:
-            embed.set_thumbnail(url=target.display_avatar.url)
-        if fields:
-            for name, value in fields:
-                embed.add_field(name=name, value=value, inline=False)
         try:
-            await channel.send(embed=embed)
+            await channel.send(view=log_card(**kwargs))
         except discord.HTTPException:
             pass
 
@@ -284,11 +341,7 @@ class Moderation(commands.Cog):
             query.execute(sql, (member.id, reason, ctx.author.id, date_str))
             con.commit()
 
-            embed = discord.Embed(
-                description=f"{member.mention} has been warned by {ctx.author.mention}.\n**Reason:** {reason}",
-                color=member.color,
-            )
-            await ctx.respond(embed=embed)
+            await ctx.respond(view=warn_card(member, ctx.author, reason))
             await self._log(
                 title="Member Warned",
                 description=f"**{member}** ({member.id}) was warned.",
@@ -370,35 +423,23 @@ class Moderation(commands.Cog):
                 'SELECT "id", "reason", "moderator", "date" FROM warns WHERE "user" = %s ORDER BY "id"',
                 (user.id,))
             results = query.fetchall()
-            count = len(results)
 
-            pfp = user.display_avatar.url if user.display_avatar else user.default_avatar.url
+            entries = []
+            # Newest first, and only the warns the card can show, so a member with
+            # hundreds of warns does not cost hundreds of user lookups.
+            for warn_id, warn_reason, mod_id, warn_date in reversed(results):
+                if len(entries) >= MAX_WARNS_SHOWN:
+                    break
+                mod_name = "Unknown"
+                if mod_id:
+                    try:
+                        mod_user = self.bot.get_user(int(mod_id)) or await self.bot.fetch_user(int(mod_id))
+                        mod_name = mod_user.name
+                    except Exception:
+                        mod_name = f"ID: {mod_id}"
+                entries.append((warn_id, warn_reason, mod_name, warn_date))
 
-            embed = discord.Embed(color=0xe83535)
-            embed.set_author(name=f"{count} Warning(s) for {user.name} ({user.id})", icon_url=pfp)
-
-            if count == 0:
-                embed.description = "No warnings found."
-            else:
-                # Show warns in reverse order (newest first)
-                for row in reversed(results):
-                    warn_id, warn_reason, mod_id, warn_date = row
-
-                    mod_name = "Unknown"
-                    if mod_id:
-                        try:
-                            mod_user = self.bot.get_user(int(mod_id)) or await self.bot.fetch_user(int(mod_id))
-                            mod_name = mod_user.name
-                        except Exception:
-                            mod_name = f"ID: {mod_id}"
-
-                    embed.add_field(
-                        name=f"Warn #{warn_id}  •  Mod: {mod_name}",
-                        value=f"**Reason:** {warn_reason}\n📅 {warn_date}",
-                        inline=False,
-                    )
-
-            await ctx.respond(embed=embed)
+            await ctx.respond(view=warnings_card(user, entries, total=len(results)))
         except Exception as e:
             await ctx.respond(f"Failed to fetch warnings: {e}", ephemeral=True)
 
