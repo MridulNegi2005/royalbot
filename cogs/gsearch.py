@@ -1,5 +1,6 @@
 from googlesearch import search as search2
 from discord.ext import commands,tasks
+import asyncio
 import discord
 from discord.commands import slash_command,SlashCommandGroup,permissions,Option
 
@@ -66,13 +67,23 @@ class Gsearch(commands.Cog):
             await interaction.response.edit_message(content=self.lb[-1],view=self)
 
     @slash_command(description="Search google!")
+    @commands.cooldown(1, 15, commands.BucketType.user)
     async def search(self,ctx,query:Option(str,"The query you want to search.")):
-        results = search2(query,stop=10)
-        result=[]
-        for x in results:
-            result.append(x)
-        print(result)
+        await ctx.defer()
+
+        # googlesearch scrapes synchronously, so this has to stay off the event loop.
+        def run_search():
+            return list(search2(query,stop=10,pause=0.5))
+
+        try:
+            result = await asyncio.to_thread(run_search)
+        except Exception as e:
+            await ctx.send_followup(f"Search failed: {e}")
+            return
+        if not result:
+            await ctx.send_followup("No results found.")
+            return
         view = self.paginator(ctx,result)
-        await ctx.send(result[0],view=view)
+        await ctx.send_followup(result[0],view=view)
 def setup(bot):
     bot.add_cog(Gsearch(bot))
