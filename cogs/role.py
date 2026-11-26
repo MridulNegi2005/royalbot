@@ -19,19 +19,17 @@ class role(commands.Cog):
     async def on_member_update(self,before,after):
         if before.roles != after.roles:
             yt_member = before.guild.get_role(896352016144691230)
-            if yt_member in before.roles:
-                if yt_member not in after.roles:
-                    for x in self.sponsor:
-                        role = before.guild.get_role(x)
-                        await after.remove_roles(role)
-
             booster = before.guild.get_role(780999224153473054)
-            if booster in before.roles:
-                if booster not in after.roles:
-                    for x in self.sponsor:
-                        role = before.guild.get_role(x)
-                        await after.remove_roles(role)
-            
+            lost_perk = ((yt_member in before.roles and yt_member not in after.roles)
+                         or (booster in before.roles and booster not in after.roles))
+            if lost_perk:
+                # One request for the whole set. The old loop sent 12 separate
+                # role edits and each one waited on its own rate limit.
+                sponsor_roles = [r for r in (before.guild.get_role(x) for x in self.sponsor)
+                                 if r is not None and r in after.roles]
+                if sponsor_roles:
+                    await after.remove_roles(*sponsor_roles,reason="Perk role removed")
+
             li1=after.roles
             li2=before.roles
             if len(li1)>len(li2):
@@ -41,7 +39,6 @@ class role(commands.Cog):
                     sql = 'INSERT INTO temprole ("user","role","time") VALUES ( %s,%s,%s)'
                     val = (before.id,role.id,int(time.time()+5184000))
                     query.execute(sql, val)
-                con.commit()
     @commands.command()
     async def casino_init(self,ctx):
         await ctx.send("Process started")

@@ -299,7 +299,7 @@ class levelling(commands.Cog):
         file = await generate_level_card(ctx.author, xp, level, theme, overlay)
         await ctx.send_followup(content=msg, view=view, file=file, ephemeral=False)
     def __init__(self, bot):
-        self.cooldown=[]
+        self.cooldown={}
         self.bot = bot
         self.pool = None  # aiopg connection pool, created in _ensure_pool
         self.background=None
@@ -725,7 +725,10 @@ class levelling(commands.Cog):
             return
         if message.channel.id in self.blacklist:
             return
-        if message.author.id not in self.cooldown:
+        now = time.time()
+        if now >= self.cooldown.get(message.author.id, 0):
+            # Claimed before any await, so two quick messages cannot both earn XP.
+            self.cooldown[message.author.id] = now + 60
             xp_gain = random.randint(4,8)
             try:
                 x = await self._db_fetchall(
@@ -733,14 +736,16 @@ class levelling(commands.Cog):
                     (message.author.id,)
                 )
                 if len(x)>0:
-                    xp = x[0][0]
-                    level_before= int(0.2*(math.sqrt(xp)))
-                    xp=xp+xp_gain
-                    level_after= int(0.2*(math.sqrt(xp)))
-                    await self._db_execute(
-                        'UPDATE "levelling" SET "xp" = %s where "user"=%s',
-                        (xp,message.author.id)
+                    xp_before = x[0][0]
+                    level_before= int(0.2*(math.sqrt(xp_before)))
+                    # Incremented in SQL. Reading the value and writing it back lost
+                    # XP whenever two of a user's messages were handled together.
+                    row = await self._db_fetchone(
+                        'UPDATE "levelling" SET "xp" = "xp" + %s where "user"=%s RETURNING "xp"',
+                        (xp_gain,message.author.id)
                     )
+                    xp = row[0] if row else xp_before + xp_gain
+                    level_after= int(0.2*(math.sqrt(xp)))
                     if level_after>level_before:
                         await message.channel.send(f"Congratulations {message.author.mention},you just reached level {level_after} in this dead server! <:CS_zMilkSip:853199496674279455>")
                 else:
@@ -749,40 +754,33 @@ class levelling(commands.Cog):
                         'INSERT INTO "levelling" ("user","xp","theme","overlay") values (%s,%s,%s,%s)',
                         (message.author.id,xp,1,"True")
                     )
-                for x in self.autorole.keys():
-                    if xp > x:
-                        role = message.guild.get_role(self.autorole[x])
-                        roles=""
-                        counter=0
-                        if role not in message.author.roles:
-                            counter+=1
-                            await message.author.add_roles(role,reason="Level Up!")
-                            roles+=f"{role.name} "
-                        theme_unlock_msg = ""
-                        # Check for theme unlocks at new level thresholds
-                        new_level = int(0.2*(math.sqrt(xp)))
-                        theme_unlocks = []
-                        if new_level >= 20:
-                            theme_unlocks.append("City")
-                        elif new_level >= 15:
-                            theme_unlocks.append("Red Metal")
-                        elif new_level >= 10:
-                            theme_unlocks.append("Cosmos")
-                        elif new_level >= 5:
-                            theme_unlocks.append("Mint")
-                        elif new_level > 0:
-                            theme_unlocks.append("Tech")
-                        if theme_unlocks:
-                            theme_unlock_msg = f"You also unlocked the theme: {theme_unlocks[-1]}! Use /theme to select your new theme."
-                        if counter == 1:
-                            await message.channel.send(f"Congratulations dear {message.author.mention}, you achieved the role {roles}!\n{theme_unlock_msg}")
-                        elif counter > 1:
-                            await message.channel.send(f"Congratulations dear {message.author.mention}, you achieved the roles {roles}!{theme_unlock_msg}")
+                # Collected first, then granted in one API call. The counters used to
+                # reset on every pass, so only the last role was ever announced.
+                earned = [message.guild.get_role(rid)
+                          for threshold, rid in self.autorole.items() if xp > threshold]
+                missing = [r for r in earned
+                           if r is not None and r not in message.author.roles]
+                if missing:
+                    await message.author.add_roles(*missing,reason="Level Up!")
+                    new_level = int(0.2*(math.sqrt(xp)))
+                    if new_level >= 20:
+                        theme = "City"
+                    elif new_level >= 15:
+                        theme = "Red Metal"
+                    elif new_level >= 10:
+                        theme = "Cosmos"
+                    elif new_level >= 5:
+                        theme = "Mint"
+                    else:
+                        theme = "Tech"
+                    theme_unlock_msg = f"You also unlocked the theme: {theme}! Use /theme to select your new theme."
+                    names = " ".join(r.name for r in missing)
+                    word = "role" if len(missing) == 1 else "roles"
+                    await message.channel.send(
+                        f"Congratulations dear {message.author.mention}, you achieved the {word} {names}!\n{theme_unlock_msg}")
             except Exception as e:
                 print(f"[levelling] DB error in on_message: {e}")
-            self.cooldown.append(message.author.id)
-            await asyncio.sleep(60)
-            self.cooldown.remove(message.author.id)
+
 
 def human_format(num):
     num = float('{:.4g}'.format(num))

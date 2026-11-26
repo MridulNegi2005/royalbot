@@ -15,7 +15,7 @@ class PreVerify(discord.ui.View):
     async def preverify(self, button,interaction:discord.Interaction):
         number = random.randint(10000,99999)
         embed = discord.Embed(description=f"Please enter the number {number} below and confirm.")
-        embed.set_author(name=interaction.message.author.name,icon_url=interaction.message.author.avatar.url)
+        embed.set_author(name=interaction.message.author.name,icon_url=interaction.message.author.display_avatar.url)
         embed.add_field(name="Input",value='``` ```')
         await interaction.response.send_message(embed=embed,view=Verify(number),ephemeral=True)
     @discord.ui.button(label=f"Help Me", style=discord.ButtonStyle.red,custom_id="Verify_Help")
@@ -30,7 +30,7 @@ class Verify(discord.ui.View):
     async def one(self, button,interaction:discord.Interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
+        input = re.sub(r'\D', '', input)
         input+='1'
         embed.clear_fields()
         embed.add_field(name='Input',value=f"```py\n{input}```")
@@ -39,7 +39,7 @@ class Verify(discord.ui.View):
     async def two(self, button,interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
+        input = re.sub(r'\D', '', input)
         input+='2'
         embed.clear_fields()
         embed.add_field(name='Input',value=f"```py\n{input}```")
@@ -48,7 +48,7 @@ class Verify(discord.ui.View):
     async def three(self, button,interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
+        input = re.sub(r'\D', '', input)
         input+='3'
         embed.clear_fields()
         embed.add_field(name='Input',value=f"```py\n{input}```")
@@ -57,7 +57,7 @@ class Verify(discord.ui.View):
     async def four(self, button,interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
+        input = re.sub(r'\D', '', input)
         input+='4'
         embed.clear_fields()
         embed.add_field(name='Input',value=f"```py\n{input}```")
@@ -66,7 +66,7 @@ class Verify(discord.ui.View):
     async def five(self, button,interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
+        input = re.sub(r'\D', '', input)
         input+='5'
         embed.clear_fields()
         embed.add_field(name='Input',value=f"```py\n{input}```")
@@ -75,7 +75,7 @@ class Verify(discord.ui.View):
     async def six(self, button,interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
+        input = re.sub(r'\D', '', input)
         input+='6'
         embed.clear_fields()
         embed.add_field(name='Input',value=f"```py\n{input}```")
@@ -84,7 +84,7 @@ class Verify(discord.ui.View):
     async def seven(self, button,interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
+        input = re.sub(r'\D', '', input)
         input+='7'
         embed.clear_fields()
         embed.add_field(name='Input',value=f"```py\n{input}```")
@@ -93,7 +93,7 @@ class Verify(discord.ui.View):
     async def eight(self, button,interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
+        input = re.sub(r'\D', '', input)
         input+='8'
         embed.clear_fields()
         embed.add_field(name='Input',value=f"```py\n{input}```")
@@ -102,7 +102,7 @@ class Verify(discord.ui.View):
     async def nine(self, button,interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
+        input = re.sub(r'\D', '', input)
         input+='9'
         embed.clear_fields()
         embed.add_field(name='Input',value=f"```py\n{input}```")
@@ -117,7 +117,7 @@ class Verify(discord.ui.View):
     async def zero(self, button,interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
+        input = re.sub(r'\D', '', input)
         input+='0'
         embed.clear_fields()
         embed.add_field(name='Input',value=f"```py\n{input}```")
@@ -126,19 +126,23 @@ class Verify(discord.ui.View):
     async def verify(self, button,interaction:discord.Interaction):
         embed=interaction.message.embeds[0]
         input = embed.fields[0].value
-        input = re.sub('\D', '', input)
-        if self.otp==int(input):
-            channel = interaction.guild.get_channel(819183528402223157)
-            await interaction.user.add_roles(interaction.guild.get_role(804028250997260308))
+        input = re.sub(r'\D', '', input)
+        if input and self.otp==int(input):
+            role = interaction.guild.get_role(804028250997260308)
+            if role:
+                await interaction.user.add_roles(role)
             await interaction.response.send_message("You are now verified! Have Fun",ephemeral=True)
             x = datetime.datetime.now(datetime.timezone.utc)
             time_gap = x-interaction.user.joined_at
             time_gap = convert(time_gap.total_seconds())
-            embed = discord.Embed(title=f"{interaction.user.name}#{interaction.user.discriminator}'s Verification Result:",description=f"The user successfully verified after {time_gap} later!",color=0xff4242)
+            embed = discord.Embed(title=f"{interaction.user.name}'s Verification Result:",description=f"The user successfully verified after {time_gap} later!",color=0xff4242)
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            await channel.send(embed=embed)
+            channel = interaction.guild.get_channel(819183528402223157)
+            if channel:
+                await channel.send(embed=embed)
             channel = interaction.guild.get_channel(814016728950112317)
-            await channel.send(content=f"Heya {interaction.user.mention} <a:nyaaCall:942016595495112735> ,\n**Welcome to Cosmic's Universe**! \nCome let's chat here and make some awesome friends <a:CS_BlueHearts:886856930516168705>",delete_after=120)
+            if channel:
+                await channel.send(content=f"Heya {interaction.user.mention} <a:nyaaCall:942016595495112735> ,\n**Welcome to Cosmic's Universe**! \nCome let's chat here and make some awesome friends <a:CS_BlueHearts:886856930516168705>",delete_after=120)
         else :
             self.one.disabled=True
             self.two.disabled=True
@@ -171,7 +175,10 @@ class Welcome(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        self.bot.add_view(PreVerify())
+        # on_ready fires again on every gateway resume.
+        if not getattr(self, "views_ready", False):
+            self.views_ready = True
+            self.bot.add_view(PreVerify())
 def convert(seconds):
     seconds = seconds % (24 * 3600)
     hour = seconds // 3600
