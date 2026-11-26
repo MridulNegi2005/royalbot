@@ -5,6 +5,25 @@ import os
 from discord.commands import slash_command,SlashCommandGroup,permissions,Option
 
 base_url = "https://api.openweathermap.org/data/2.5/weather"
+ICON = "https://i.ibb.co/CMrsxdX/weather.png"
+
+
+class WeatherView(discord.ui.DesignerView):
+  def __init__(self,name,description,main,requester,color):
+    super().__init__(timeout=None)
+    container = discord.ui.Container(color=color)
+    container.add_section(
+      discord.ui.TextDisplay(f"### Weather in {name}\n{description.capitalize()}"),
+      accessory=discord.ui.Thumbnail(ICON))
+    container.add_separator(divider=True)
+    container.add_text(
+      f"**Temperature** · {round(main['temp'])}°C\n"
+      f"**Humidity** · {main['humidity']}%\n"
+      f"**Pressure** · {main['pressure']} hPa")
+    container.add_separator(divider=False)
+    container.add_text(f"-# Requested by {requester}")
+    self.add_item(container)
+
 
 class Weather(commands.Cog):
   def __init__(self,bot):
@@ -31,17 +50,9 @@ class Weather(commands.Cog):
       await ctx.send_followup(f"Could not find weather for **{city}**.")
       return
 
-    y = x["main"]
-    weather_description = x["weather"][0]["description"]
-    color = ctx.guild.me.top_role.color if ctx.guild else discord.Color.blue()
-    embed = discord.Embed(title=f"Weather in {x.get('name',city)}", color=color)
-    embed.add_field(name="Descripition", value=f"**{weather_description}**", inline=False)
-    embed.add_field(name="Temperature(C)", value=f"**{round(y['temp'])}°C**", inline=False)
-    embed.add_field(name="Humidity(%)", value=f"**{y['humidity']}%**", inline=False)
-    embed.add_field(name="Atmospheric Pressure(hPa)", value=f"**{y['pressure']}hPa**", inline=False)
-    embed.set_thumbnail(url="https://i.ibb.co/CMrsxdX/weather.png")
-    embed.set_footer(text=f"Requested by {ctx.author.name}")
-    await ctx.send_followup(embed=embed)
+    await ctx.send_followup(view=WeatherView(
+      x.get("name",city), x["weather"][0]["description"], x["main"], ctx.author.name,
+      ctx.guild.me.top_role.color if ctx.guild else discord.Color.blue()))
 
 
 def setup(bot):
