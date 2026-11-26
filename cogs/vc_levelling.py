@@ -60,6 +60,106 @@ def format_duration(seconds):
     return f"{mins}m"
 
 
+# ── Components V2 cards ─────────────────────────────────────────
+# V2 has no embed fields, so the stats are laid out as text, and a V2 view cannot
+# share a message with content or an embed.
+
+TEXT_BUDGET = 3600
+
+
+def vc_stats_card(user, data, level):
+    view = discord.ui.DesignerView(timeout=None)
+    container = discord.ui.Container(color=discord.Color.blue())
+    container.add_section(
+        discord.ui.TextDisplay(
+            f"### 🎧 VC Stats\n{user.display_name}"),
+        accessory=discord.ui.Thumbnail(user.display_avatar.url))
+    container.add_separator(divider=True)
+    container.add_text(
+        f"🏅 **VC Level** · {level}\n"
+        f"✨ **Total XP** · {human_format(data['vc_xp'])}\n"
+        f"📊 **Sessions** · {data['total_sessions']}")
+    container.add_separator(divider=False)
+    container.add_text(
+        f"⏱️ **Total VC Time** · `{format_duration(data['total_vc_time'])}`\n"
+        f"🎤 **Mic On Time** · `{format_duration(data['total_mic_time'])}`\n"
+        f"📺 **Stream Time** · `{format_duration(data['total_stream_time'])}`")
+    container.add_separator(divider=False)
+    container.add_text(
+        f"🔥 **Current Streak** · {data['current_streak']} "
+        f"day{'s' if data['current_streak'] != 1 else ''}\n"
+        f"🏆 **Longest Streak** · {data['longest_streak']} "
+        f"day{'s' if data['longest_streak'] != 1 else ''}")
+    if data["total_vc_time"] > 0:
+        mic_pct = (data["total_mic_time"] / data["total_vc_time"]) * 100
+        stream_pct = (data["total_stream_time"] / data["total_vc_time"]) * 100
+        container.add_separator(divider=True)
+        container.add_text(
+            f"📈 **Activity Breakdown**\n"
+            f"Mic on: **{mic_pct:.1f}%** of VC time\n"
+            f"Streaming: **{stream_pct:.1f}%** of VC time")
+    view.add_item(container)
+    return view
+
+
+class LeaderboardData:
+    def __init__(self, pages, owner, user_rank):
+        self.pages = pages
+        self.owner = owner
+        self.user_rank = user_rank
+
+
+class VcLeaderboardControls(discord.ui.ActionRow):
+    def __init__(self, data, page):
+        super().__init__()
+        self.data = data
+        self.page = page
+        last = len(data.pages) - 1
+        self.first_btn.disabled = self.back_btn.disabled = page == 0
+        self.next_btn.disabled = self.last_btn.disabled = page >= last
+
+    async def _turn(self, interaction, page):
+        if interaction.user.id != self.data.owner:
+            await interaction.response.send_message("You can't use this!", ephemeral=True)
+            return
+        await interaction.response.edit_message(view=VcLeaderboardView(self.data, page))
+
+    @discord.ui.button(label="⏮", style=discord.ButtonStyle.grey)
+    async def first_btn(self, button, interaction):
+        await self._turn(interaction, 0)
+
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.grey)
+    async def back_btn(self, button, interaction):
+        await self._turn(interaction, self.page - 1)
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.grey)
+    async def next_btn(self, button, interaction):
+        await self._turn(interaction, self.page + 1)
+
+    @discord.ui.button(label="⏭", style=discord.ButtonStyle.grey)
+    async def last_btn(self, button, interaction):
+        await self._turn(interaction, len(self.data.pages) - 1)
+
+
+class VcLeaderboardView(discord.ui.DesignerView):
+    def __init__(self, data, page=0):
+        super().__init__(timeout=120, disable_on_timeout=True)
+        total = len(data.pages)
+        page = max(0, min(page, total - 1))
+        container = discord.ui.Container(color=discord.Color.gold())
+        container.add_text("### 🎤 VC Leaderboard")
+        container.add_separator(divider=True)
+        container.add_text(data.pages[page][:TEXT_BUDGET])
+        container.add_separator(divider=True)
+        footer = f"-# Page {page + 1}/{total}"
+        if data.user_rank > 0:
+            footer += f" • Your rank: #{data.user_rank}"
+        container.add_text(footer)
+        if total > 1:
+            container.add_item(VcLeaderboardControls(data, page))
+        self.add_item(container)
+
+
 class VCLevelling(commands.Cog):
     """Voice Chat levelling system — tracks VC time, mic usage, streaming, and awards XP."""
 
@@ -583,37 +683,7 @@ class VCLevelling(commands.Cog):
         xp = data["vc_xp"]
         level = vc_level_from_xp(xp)
 
-        embed = discord.Embed(
-            title=f"🎧 VC Stats — {user.display_name}",
-            color=discord.Color.blue()
-        )
-        embed.set_thumbnail(url=user.display_avatar.url)
-
-        # Level & XP
-        embed.add_field(name="🏅 VC Level", value=f"**{level}**", inline=True)
-        embed.add_field(name="✨ Total XP", value=f"**{human_format(xp)}**", inline=True)
-        embed.add_field(name="📊 Sessions", value=f"**{data['total_sessions']}**", inline=True)
-
-        # Time stats
-        embed.add_field(name="⏱️ Total VC Time", value=f"`{format_duration(data['total_vc_time'])}`", inline=True)
-        embed.add_field(name="🎤 Mic On Time", value=f"`{format_duration(data['total_mic_time'])}`", inline=True)
-        embed.add_field(name="📺 Stream Time", value=f"`{format_duration(data['total_stream_time'])}`", inline=True)
-
-        # Streaks
-        embed.add_field(name="🔥 Current Streak", value=f"**{data['current_streak']}** day{'s' if data['current_streak'] != 1 else ''}", inline=True)
-        embed.add_field(name="🏆 Longest Streak", value=f"**{data['longest_streak']}** day{'s' if data['longest_streak'] != 1 else ''}", inline=True)
-
-        # Percentages
-        if data["total_vc_time"] > 0:
-            mic_pct = (data["total_mic_time"] / data["total_vc_time"]) * 100
-            stream_pct = (data["total_stream_time"] / data["total_vc_time"]) * 100
-            embed.add_field(
-                name="📈 Activity Breakdown",
-                value=f"Mic on: **{mic_pct:.1f}%** of VC time\nStreaming: **{stream_pct:.1f}%** of VC time",
-                inline=False
-            )
-
-        await ctx.send_followup(embed=embed)
+        await ctx.send_followup(view=vc_stats_card(user, data, level))
 
     @slash_command(description="View VC XP leaderboard!")
     async def vcleaderboard(self, ctx):
@@ -632,7 +702,7 @@ class VCLevelling(commands.Cog):
                 user_rank = idx + 1
                 break
 
-        # Build paginated embeds
+        # Build the page bodies
         pages = []
         page_size = 10
         for page_start in range(0, len(all_rows), page_size):
@@ -659,86 +729,10 @@ class VCLevelling(commands.Cog):
 
                 desc += f"{medal}`{rank}` {name}\n　└─ Level **{level}** • {human_format(xp)} XP\n"
 
-            page_num = (page_start // page_size) + 1
-            total_pages = math.ceil(len(all_rows) / page_size)
-            embed = discord.Embed(
-                title="🎤 VC Leaderboard",
-                description=desc,
-                color=discord.Color.gold(),
-                timestamp=datetime.datetime.utcnow()
-            )
-            footer_txt = f"Page {page_num}/{total_pages}"
-            if user_rank > 0:
-                footer_txt += f" • Your rank: #{user_rank}"
-            embed.set_footer(text=footer_txt, icon_url=ctx.author.display_avatar.url)
-            pages.append(embed)
+            pages.append(desc)
 
-        if len(pages) == 1:
-            await ctx.send_followup(embed=pages[0])
-        else:
-            # Use paginator view
-            view = LeaderboardPaginator(ctx, pages)
-            await ctx.send_followup(embed=pages[0], view=view)
-
-
-class LeaderboardPaginator(discord.ui.View):
-    """Simple paginator for VC leaderboard."""
-    def __init__(self, ctx, pages):
-        super().__init__(timeout=120)
-        self.ctx = ctx
-        self.pages = pages
-        self.current = 0
-
-        # Disable back buttons initially
-        self.first_btn.disabled = True
-        self.back_btn.disabled = True
-        if len(pages) <= 1:
-            self.next_btn.disabled = True
-            self.last_btn.disabled = True
-
-    def _update_buttons(self):
-        self.first_btn.disabled = self.current == 0
-        self.back_btn.disabled = self.current == 0
-        self.next_btn.disabled = self.current >= len(self.pages) - 1
-        self.last_btn.disabled = self.current >= len(self.pages) - 1
-
-    @discord.ui.button(label="⏮", style=discord.ButtonStyle.grey)
-    async def first_btn(self, button, interaction):
-        if interaction.user.id != self.ctx.author.id:
-            await interaction.response.send_message("You can't use this!", ephemeral=True)
-            return
-        self.current = 0
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self.pages[0], view=self)
-
-    @discord.ui.button(label="◀", style=discord.ButtonStyle.grey)
-    async def back_btn(self, button, interaction):
-        if interaction.user.id != self.ctx.author.id:
-            await interaction.response.send_message("You can't use this!", ephemeral=True)
-            return
-        if self.current > 0:
-            self.current -= 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self.pages[self.current], view=self)
-
-    @discord.ui.button(label="▶", style=discord.ButtonStyle.grey)
-    async def next_btn(self, button, interaction):
-        if interaction.user.id != self.ctx.author.id:
-            await interaction.response.send_message("You can't use this!", ephemeral=True)
-            return
-        if self.current < len(self.pages) - 1:
-            self.current += 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self.pages[self.current], view=self)
-
-    @discord.ui.button(label="⏭", style=discord.ButtonStyle.grey)
-    async def last_btn(self, button, interaction):
-        if interaction.user.id != self.ctx.author.id:
-            await interaction.response.send_message("You can't use this!", ephemeral=True)
-            return
-        self.current = len(self.pages) - 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self.pages[-1], view=self)
+        await ctx.send_followup(view=VcLeaderboardView(
+            LeaderboardData(pages, ctx.author.id, user_rank)))
 
 
 def setup(bot):
