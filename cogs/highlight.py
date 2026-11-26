@@ -8,6 +8,47 @@ import psycopg2
 from porter2stemmer import Porter2Stemmer
 from main import query,con
 from discord.commands import slash_command,SlashCommandGroup,permissions,Option
+
+TEXT_BUDGET = 3600
+
+
+def _view(color):
+    view = discord.ui.DesignerView(timeout=None)
+    container = discord.ui.Container(color=color)
+    view.add_item(container)
+    return view, container
+
+
+def notice_card(title, description, color):
+    view, container = _view(color)
+    container.add_text(f"### {title}\n{description}"[:TEXT_BUDGET])
+    return view
+
+
+def list_card(member, heading, lines):
+    view, container = _view(0xe83535)
+    container.add_section(
+        discord.ui.TextDisplay(f"### {heading}\n{member.display_name}"),
+        accessory=discord.ui.Thumbnail(member.display_avatar.url))
+    container.add_separator(divider=True)
+    container.add_text(("\n".join(lines) or "None.")[:TEXT_BUDGET])
+    return view
+
+
+def highlight_dm_card(message, hl, lines):
+    """The DM used to carry content and an embed together. V2 allows only one, so
+    the whole notification lives in the container."""
+    view, container = _view(0xe31b1b)
+    container.add_text(
+        f"### “{hl}”\nIn **{message.guild.name}** <#{message.channel.id}> "
+        f"you were mentioned with this highlighted word.")
+    container.add_separator(divider=True)
+    container.add_text(("\n".join(lines) or "-# No context available.")[:TEXT_BUDGET])
+    container.add_separator(divider=True)
+    container.add_text(f"-# [Jump to message]({message.jump_url})")
+    return view
+
+
 class highlight(commands.Cog):
     def __init__(self, bot):
         self.bot=bot
@@ -56,8 +97,10 @@ class highlight(commands.Cog):
             self.query.execute(sql, val)
             self.con.commit()
             await self.refresh_watchlist()
-            embed=discord.Embed(title="Highlight Created",description=f'I will DM you whenever someone mentions the word "{word}"',color=ctx.author.color)
-            await ctx.send(embed=embed)
+            await ctx.send(view=notice_card(
+                "Highlight Created",
+                f'I will DM you whenever someone mentions the word "{word}"',
+                ctx.author.color))
         elif action.lower() == 'remove':
             if word == None:
                 await ctx.send("Pls Specify word to be deleted!!",delete_after=5.0)
@@ -67,69 +110,36 @@ class highlight(commands.Cog):
             self.query.execute(sql, val)
             self.con.commit()
             await self.refresh_watchlist()
-            embed=discord.Embed(title="Highlight Deleted",description=f'Successfully removed the word "{word}" from your highlighted words',color=ctx.author.color)
-            await ctx.send(embed=embed)
+            await ctx.send(view=notice_card(
+                "Highlight Deleted",
+                f'Successfully removed the word "{word}" from your highlighted words',
+                ctx.author.color))
         elif action.lower() == 'list':
-            sql = 'SELECT * FROM highlight WHERE "user" = %s'
+            sql = 'SELECT "keyword" FROM highlight WHERE "user" = %s'
             self.query.execute(sql,(ctx.author.id,))
-            myresult = self.query.fetchall()
-            highlights = discord.Embed(title="\u200b",color=0xe83535)
-            highlights.set_author(name=f"{ctx.author.display_name}",icon_url = ctx.author.avatar.url)
-            value =""
-            for x in myresult:
-                a = str(x)
-                a = a.replace('(','')
-                a = a.replace(')','')
-                a = a.replace("'",'')
-                y = a.split(',')
-                value = value+f"\n{y[1]}"
-            if value == "":
+            words = [row[0] for row in self.query.fetchall()]
+            if not words:
                 await ctx.send("You have no highlights!\nSet a highlight using `*highlight add <word>`")
                 return
-            highlights.add_field(name=f"List of highlights",value=value, inline=True)
-            await ctx.send(embed=highlights)
+            await ctx.send(view=list_card(ctx.author,"List of highlights",words))
         elif action.lower() == 'test':
-            word2 = word.lower()
-            highlight = discord.Embed(title="\u200b",description="Your word/sentence triggers below highlights!",color=0xe83535)
-            highlight.set_author(name=f"{ctx.author.display_name}",icon_url = ctx.author.avatar.url)
-            value=""
-            for y in word2.split():
-                y = self.stemmer.stem(y)
+            matches = []
+            for part in word.lower().split():
                 sql = 'SELECT "keyword" FROM highlight WHERE "user" = %s AND "highlight" = %s'
-                self.query.execute(sql,(ctx.author.id,y))
-                highlights = self.query.fetchall()
-                a = str(highlights)
-                a = a.replace('(','')
-                a = a.replace(')','')
-                a = a.replace('[','')
-                a = a.replace(']','')
-                a = a.replace("'",'')
-                y = a.split(',')
-                for a in y:
-                    value=value+f"{a}\n"
-            highlight.add_field(name=f"Highlight matches",value=value,inline=True)
-            await ctx.send(embed=highlight)
+                self.query.execute(sql,(ctx.author.id,self.stemmer.stem(part)))
+                matches.extend(row[0] for row in self.query.fetchall())
+            await ctx.send(view=list_card(
+                ctx.author,"Highlight matches",matches or ["Nothing in that text triggers a highlight."]))
     @slash_command(description="Shows your highlights")
     async def show(self,ctx,user:discord.Member):
         if ctx.author.id == 745884061066592266:
-            sql = 'SELECT * FROM highlight WHERE "user" = %s'
+            sql = 'SELECT "keyword" FROM highlight WHERE "user" = %s'
             self.query.execute(sql,(user.id,))
-            myresult = self.query.fetchall()
-            highlights = discord.Embed(title="\u200b",color=0xe83535)
-            highlights.set_author(name=f"{user.display_name}",icon_url = user.avatar.url)
-            value =""
-            for x in myresult:
-                a = str(x)
-                a = a.replace('(','')
-                a = a.replace(')','')
-                a = a.replace("'",'')
-                y = a.split(',')
-                value = value+f"\n{y[1]}"
-            if value == "":
+            words = [row[0] for row in self.query.fetchall()]
+            if not words:
                 await ctx.send("You have no highlights!\nSet a highlight using `*highlight add <word>`")
                 return
-            highlights.add_field(name=f"List of highlights",value=value, inline=True)
-            await ctx.send(embed=highlights)
+            await ctx.send(view=list_card(user,"List of highlights",words))
     @Cog.listener("on_message")
     async def on_message(self,message):
         self.last_seen[message.author.id]=datetime.datetime.utcnow()
@@ -153,24 +163,22 @@ class highlight(commands.Cog):
                     ctx = await self.bot.get_context(message)
                     if ctx.prefix is not None:
                         continue
-                    e = await generate_context(self,message, k)
+                    lines = await generate_context(self,message)
                     try:
-                        await usr.send(f'In **{message.guild.name}** <#{message.channel.id}>, you were mentioned with the highlighted word "{k}"', embed=e)
+                        await usr.send(view=highlight_dm_card(message, k, lines))
                     except discord.Forbidden:
                         # User has DMs disabled or has blocked the bot - silently skip
                         pass     
     @Cog.listener("on_reaction_add")
     async def on_reaction_add(self,reaction,user):
         self.last_seen[user.id]=datetime.datetime.utcnow()
-async def generate_context(self, msg, hl):
+async def generate_context(self, msg):
         fmt = []
         async for m in msg.channel.history(limit=5):
             time = m.created_at.timestamp()
             time_2 = str(time).split('.')
             fmt.append(f"<t:{time_2[0]}:t> **{m.author.name}:** {m.content[:200]}")
-        e = discord.Embed(title=f"**{hl}**", description='\n'.join(fmt[::-1]),color=0xe31b1b,timestamp=datetime.datetime.utcnow())
-        e.add_field(name="Source Message",value=f"[Jump to Message]({msg.jump_url})")
-        return e
+        return fmt[::-1]
 
 def setup(bot):
     bot.add_cog(highlight(bot))
