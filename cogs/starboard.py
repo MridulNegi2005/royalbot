@@ -34,13 +34,24 @@ class starboard(commands.Cog):
             star = x[0][1] + 1
             posted = x[0][2]
             if star == 3:
-                embed = discord.Embed(description=f"{message.content}\n⠀\n⠀\n**[➜ Click to jump to this message]({message.jump_url})**",color=0x2f3136,timestamp=datetime.datetime.utcnow())
+                body = message.content
+                # Stickers are not attachments, so a sticker-only message used to
+                # reach the starboard as an empty card.
+                for sticker in message.stickers:
+                    body += f"\n[sticker: {sticker.name}]({sticker.url})"
+                embed = discord.Embed(description=f"{body}\n⠀\n⠀\n**[➜ Click to jump to this message]({message.jump_url})**",color=0x2f3136,timestamp=datetime.datetime.now(datetime.timezone.utc))
                 embed.set_author(name=f"{message.author.name}",icon_url=message.author.display_avatar.url)
                 embed.set_footer(text=f"Cosmic's Universe",icon_url="https://cdn.discordapp.com/icons/767591734841835540/a_059eba705bfaa741a3483a9c8cb68b58.gif?size=4096")
                 starchan = self.bot.get_channel(899903267868389386)
                 files=[]
                 for attachment in message.attachments:
-                    files.append(await attachment.to_file())
+                    try:
+                        files.append(await attachment.to_file())
+                    except discord.HTTPException:
+                        pass
+                images = [a for a in message.attachments if (a.content_type or "").startswith("image/")]
+                if images:
+                    embed.set_image(url=images[0].url)
                 starmessage = await starchan.send(f"**{star}** ⭐ **|**<#{message.channel.id}>",embed=embed,files=files)
                 sql = 'UPDATE "starboard" SET "star" = %s , "starmessage" = %s WHERE "message" = %s'
                 val=(star,starmessage.id,payload.message_id)
