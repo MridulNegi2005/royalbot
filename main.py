@@ -1,3 +1,8 @@
+import sys
+# Cogs do `from main import query,con`. Without this alias Python imports main.py a
+# second time under the name "main" and the whole file runs twice.
+sys.modules.setdefault("main", sys.modules["__main__"])
+
 from re import M
 import discord
 from discord.ext import commands
@@ -24,19 +29,81 @@ if platform.system() == 'Windows':
 temp_role='hello'
 whitelist=[767591735295213580]
 def get_connection():
-    try:
-        return psycopg2.connect(
-            database=os.getenv("POSTGRES_DB"),
-            user=os.getenv("POSTGRES_USER"),
-            password=os.getenv("POSTGRES_PASSWORD"),
-            host=os.getenv("POSTGRES_HOST"),
-            port=int(os.getenv("POSTGRES_PORT", 5432)),
-			sslmode="require"
-        )
-    except:
-        return False
-con = get_connection()
-query = con.cursor()
+    con = psycopg2.connect(
+        database=os.getenv("POSTGRES_DB"),
+        user=os.getenv("POSTGRES_USER"),
+        password=os.getenv("POSTGRES_PASSWORD"),
+        host=os.getenv("POSTGRES_HOST"),
+        port=int(os.getenv("POSTGRES_PORT", 5432)),
+        sslmode="require",
+        connect_timeout=10,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=3,
+    )
+    con.autocommit = True
+    return con
+
+class Cursor:
+    """Shared cursor that reconnects instead of staying dead after one failed query.
+
+    autocommit is on, so a failed statement cannot leave the connection in the
+    'current transaction is aborted' state that used to take every cog down."""
+
+    def __init__(self):
+        self._con = None
+        self._cur = None
+
+    def _open(self):
+        self._con = get_connection()
+        self._cur = self._con.cursor()
+
+    def _drop(self):
+        for obj in (self._cur, self._con):
+            try:
+                if obj is not None:
+                    obj.close()
+            except Exception:
+                pass
+        self._con = self._cur = None
+
+    def execute(self, sql, params=None):
+        for retry in (False, True):
+            try:
+                if self._cur is None:
+                    self._open()
+                return self._cur.execute(sql, params)
+            except psycopg2.Error as e:
+                self._drop()
+                if retry:
+                    print(f"[db] query failed: {e}", file=sys.stderr, flush=True)
+                    raise
+
+    def fetchall(self):
+        return self._cur.fetchall()
+
+    def fetchone(self):
+        return self._cur.fetchone()
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount if self._cur is not None else -1
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
+    @property
+    def connection(self):
+        if self._con is None:
+            self._open()
+        return self._con
+
+query = Cursor()
+con = query
 conn = sqlite3.connect('help.db')
 cur = conn.cursor()
 child = True
@@ -122,25 +189,36 @@ class Help(discord.ui.View):
     def __init__(self,help):
         super().__init__()
         self.add_item(Dropdown(help))
+async def connect_lavalink():
+	uri = os.getenv("LAVALINK_URI", "http://127.0.0.1:2333")
+	password = os.getenv("LAVALINK_PASSWORD")
+	if not password:
+		print('[main.py] LAVALINK_PASSWORD is not set, music will not work.', file=sys.stderr, flush=True)
+		return
+	node = wavelink.Node(identifier="CosmicNode", uri=uri, password=password)
+	try:
+		await wavelink.Pool.connect(nodes=[node], client=bot)
+	except Exception as e:
+		print(f'[main.py] Failed to reach Lavalink at {uri}: {e}', file=sys.stderr, flush=True)
+		return
+	# Pool.connect returns before the websocket handshake finishes, so a wrong
+	# password or a dead node only shows up a moment later.
+	for _ in range(10):
+		await asyncio.sleep(1)
+		if node.status == wavelink.NodeStatus.CONNECTED:
+			print('[main.py] Connected to Lavalink node!')
+			return
+	print(f'[main.py] Lavalink node is {node.status.name} after 10s. '
+	      f'Check that Lavalink is up at {uri} and that LAVALINK_PASSWORD matches '
+	      f'lavalink/application.yml.', file=sys.stderr, flush=True)
+
 @bot.event
 async def on_ready():
-	bot.load_extension("cogs.sub")
 	print('We have logged in as {0.user}'.format(bot))
-
-	# Connect to Lavalink node
-	try:
-		nodes = [
-			wavelink.Node(
-				identifier="CosmicNode",
-				uri=os.getenv("LAVALINK_URI", "http://127.0.0.1:2333"),
-				password=os.getenv("LAVALINK_PASSWORD", "youshallnotpass"),
-			)
-		]
-		await wavelink.Pool.connect(nodes=nodes, client=bot)
-		print('[main.py] Connected to Lavalink node!')
-	except Exception as e:
-		print(f'[main.py] Failed to connect to Lavalink: {e}')
-import sys
+	if not bot.__dict__.get('_startup_done'):
+		bot._startup_done = True
+		try_load_extension("cogs.sub")
+		await connect_lavalink()
 def try_load_extension(name):
 	try:
 		bot.load_extension(name)
@@ -432,8 +510,11 @@ async def help(ctx,query:Option(str,"Help regarding particular module/command",r
 			message = await ctx.respond(embed=help5,view=view)
 		
 	else:
-		cur.execute(f"SELECT * FROM command WHERE name like '{query}'")
+		cur.execute("SELECT * FROM command WHERE name like ?", (query,))
 		hint = cur.fetchone()
+		if hint is None:
+			await ctx.respond(f"No help found for `{query}`.",ephemeral=True)
+			return
 		help = discord.Embed(title=f"{prefix}{hint[1]}",description="*Values in () are optional and Values in [] are required*",color=0xe02626)
 		help.add_field(name="Description:",value=hint[2])
 		help.add_field(name="Syntax:",value=f"`{prefix}{hint[3]}`")
@@ -662,8 +743,10 @@ async def on_command_error(ctx, error):
 		embed = discord.Embed(title="Command on Cooldown!",description=f"The command was used recently! Try again in **{time}**")
 		await ctx.send(embed=embed)
 	elif isinstance(error,commands.MissingRequiredArgument):
-		cur.execute(f"SELECT * FROM command WHERE name like '{ctx.command.name}'")
+		cur.execute("SELECT * FROM command WHERE name like ?", (ctx.command.name,))
 		hint = cur.fetchone()
+		if hint is None:
+			return
 		help = discord.Embed(title=f"{prefix}{hint[1]}",description="Values in () are optional\nValues in [] are required",color=0xe02626)
 		help.add_field(name="Description:",value=hint[2])
 		help.add_field(name="Syntax:",value=f"`{prefix}{hint[3]}`")
