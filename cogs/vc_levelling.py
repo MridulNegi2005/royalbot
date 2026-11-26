@@ -290,6 +290,13 @@ class VCLevelling(commands.Cog):
                 continue
             await self._process_user_tick(member, now)
 
+    @xp_tick_loop.error
+    async def xp_tick_error(self, error):
+        # tasks.loop stops for good on an unhandled exception, so XP would silently
+        # stop being awarded until the next restart.
+        print(f"[vc_levelling] xp loop crashed: {error!r}")
+        self.xp_tick_loop.restart()
+
     @xp_tick_loop.before_loop
     async def before_xp_tick(self):
         await self.bot.wait_until_ready()
