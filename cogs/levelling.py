@@ -27,6 +27,78 @@ DSN = f"dbname={os.getenv('POSTGRES_DB')} user={os.getenv('POSTGRES_USER')} pass
 40000 : Legendary Brawler
 62500 : Chromatic Brawler"""
 
+# ─── Components V2 ───────────────────────────────────────────
+# A V2 view carries the whole message, so a generated PNG is attached as usual
+# and shown through a gallery that refers to it by attachment:// name.
+
+TEXT_BUDGET = 3600
+
+
+def image_card(text, filename, color=None):
+    view = discord.ui.DesignerView(timeout=None)
+    container = discord.ui.Container(color=color)
+    if text:
+        container.add_text(text[:TEXT_BUDGET])
+    container.add_gallery(discord.MediaGalleryItem(f"attachment://{filename}"))
+    view.add_item(container)
+    return view
+
+
+class BoardData:
+    def __init__(self, pages, owner, rank):
+        self.pages = pages
+        self.owner = owner
+        self.rank = rank
+
+
+class BoardControls(discord.ui.ActionRow):
+    def __init__(self, data, page):
+        super().__init__()
+        self.data = data
+        self.page = page
+        last = len(data.pages) - 1
+        self.first.disabled = self.back.disabled = page == 0
+        self.next.disabled = self.last.disabled = page >= last
+
+    async def _turn(self, interaction, page):
+        if interaction.user.id != self.data.owner:
+            await interaction.response.send_message("You can't use this!", ephemeral=True)
+            return
+        await interaction.response.edit_message(view=BoardView(self.data, page))
+
+    @discord.ui.button(emoji='<:fast_backward:918877900109914122>', style=discord.ButtonStyle.grey)
+    async def first(self, button, interaction):
+        await self._turn(interaction, 0)
+
+    @discord.ui.button(emoji='<:backward:918872031796277320>', style=discord.ButtonStyle.gray)
+    async def back(self, button, interaction):
+        await self._turn(interaction, self.page - 1)
+
+    @discord.ui.button(emoji='<:forward:918871999596617790>', style=discord.ButtonStyle.grey)
+    async def next(self, button, interaction):
+        await self._turn(interaction, self.page + 1)
+
+    @discord.ui.button(emoji="<:fast_forward:918872194099077191>", style=discord.ButtonStyle.gray)
+    async def last(self, button, interaction):
+        await self._turn(interaction, len(self.data.pages) - 1)
+
+
+class BoardView(discord.ui.DesignerView):
+    def __init__(self, data, page=0):
+        super().__init__(timeout=180, disable_on_timeout=True)
+        total = len(data.pages)
+        page = max(0, min(page, total - 1))
+        container = discord.ui.Container()
+        container.add_text("### Leaderboard")
+        container.add_separator(divider=True)
+        container.add_text(data.pages[page][:TEXT_BUDGET] or "Nobody has earned XP yet.")
+        container.add_separator(divider=True)
+        container.add_text(f"-# {page + 1}/{total} • Your rank : {data.rank}")
+        if total > 1:
+            container.add_item(BoardControls(data, page))
+        self.add_item(container)
+
+
 class Themes(discord.ui.Button):
     def __init__(self,user,name,id,cog):
         self.user=user
@@ -54,7 +126,8 @@ class levelling(commands.Cog):
         Only available to admins for testing.
         """
         # Send the rank cards image (ephemeral)
-        await ctx.respond(file=discord.File('cogs/assests/Rank_Cards.png'), ephemeral=False)
+        await ctx.respond(view=image_card("### Rank cards","Rank_Cards.png"),
+                          file=discord.File('cogs/assests/Rank_Cards.png'), ephemeral=False)
 
         # Fetch user XP and theme info
         try:
@@ -75,9 +148,6 @@ class levelling(commands.Cog):
         xp = int(lb1.get(ctx.author.id, 0))
         level = int(0.2 * (math.sqrt(xp)))
 
-        # Compose level message
-        msg = f"Your current level: **{level}** | XP: **{xp}**\nSelect a theme or toggle overlay below."
-
         # Theme requirements
         theme_defs = [
             (1, "Tech", 0),
@@ -87,16 +157,24 @@ class levelling(commands.Cog):
             (5, "City", 20),
         ]
 
-        class ThemeTestView(discord.ui.View):
-            def __init__(self, user_id, current_theme, current_overlay, user_level, user_xp, ctx, *args, **kwargs):
-                super().__init__(*args, **kwargs)
+        class ThemeTestView(discord.ui.DesignerView):
+            def __init__(self, user_id, current_theme, current_overlay, user_level, user_xp, ctx, note=None):
+                super().__init__(timeout=180)
                 self.user_id = user_id
                 self.current_theme = current_theme
                 self.current_overlay = current_overlay
                 self.user_level = user_level
                 self.user_xp = user_xp
                 self.ctx = ctx
-                # Add theme buttons
+
+                container = discord.ui.Container()
+                container.add_text(
+                    f"{note + chr(10) if note else ''}"
+                    f"Your current level: **{user_level}** | XP: **{user_xp}**\n"
+                    "Select a theme or toggle overlay below.")
+                container.add_gallery(discord.MediaGalleryItem("attachment://Level.png"))
+
+                theme_buttons = []
                 for tid, tname, treq in theme_defs:
                     if user_level >= treq:
                         style = discord.ButtonStyle.success if current_theme == tid else discord.ButtonStyle.danger
@@ -104,10 +182,12 @@ class levelling(commands.Cog):
                     else:
                         style = discord.ButtonStyle.secondary
                         disabled = True
-                    self.add_item(self.ThemeButton(tid, tname, style, disabled, self))
-                # Overlay toggle button
+                    theme_buttons.append(self.ThemeButton(tid, tname, style, disabled, self))
+                container.add_row(*theme_buttons)
+
                 overlay_style = discord.ButtonStyle.success if current_overlay == "True" else discord.ButtonStyle.danger
-                self.add_item(self.OverlayButton(current_overlay, overlay_style, self))
+                container.add_row(self.OverlayButton(current_overlay, overlay_style, self))
+                self.add_item(container)
 
             class ThemeButton(discord.ui.Button):
                 def __init__(self, theme_id, theme_name, style, disabled, parent_view):
@@ -149,11 +229,11 @@ class levelling(commands.Cog):
                         self.parent_view.current_overlay,
                         self.parent_view.user_level,
                         self.parent_view.user_xp,
-                        self.parent_view.ctx
+                        self.parent_view.ctx,
+                        note=f"Theme changed to **{self.label}**!"
                     )
                     # Send new message as a reply to the previous message, then delete old
                     await interaction.channel.send(
-                        content=f"Theme changed to **{self.label}**!\nYour current level: **{self.parent_view.user_level}** | XP: **{self.parent_view.user_xp}**",
                         view=new_view,
                         file=file,
                         reference=interaction.message
@@ -204,11 +284,11 @@ class levelling(commands.Cog):
                         new_state,
                         self.parent_view.user_level,
                         self.parent_view.user_xp,
-                        self.parent_view.ctx
+                        self.parent_view.ctx,
+                        note=f"Overlay toggled to **{'ON' if new_state == 'True' else 'OFF'}**."
                     )
                     # Send new message as a reply to the previous message, then delete old
                     await interaction.channel.send(
-                        content=f"Overlay toggled to **{'ON' if new_state == 'True' else 'OFF'}**.\nYour current level: **{self.parent_view.user_level}** | XP: **{self.parent_view.user_xp}**",
                         view=new_view,
                         file=file,
                         reference=interaction.message
@@ -297,7 +377,7 @@ class levelling(commands.Cog):
         view = ThemeTestView(ctx.author.id, theme, overlay, level, xp, ctx)
         # Generate initial level card image
         file = await generate_level_card(ctx.author, xp, level, theme, overlay)
-        await ctx.send_followup(content=msg, view=view, file=file, ephemeral=False)
+        await ctx.send_followup(view=view, file=file, ephemeral=False)
     def __init__(self, bot):
         self.cooldown={}
         self.bot = bot
@@ -363,66 +443,6 @@ class levelling(commands.Cog):
         """Create pool when bot is ready."""
         await self._ensure_pool()
     #theme = SlashCommandGroup("theme", "Themes related commands")
-    class paginator(discord.ui.View):
-        def __init__(self,ctx):
-            self.counter=0
-            self.lb=[]
-            self.ctx=ctx
-            
-            super().__init__()
-        async def on_timeout(self,button,interaction):
-            button.disabled = True
-            await interaction.response.edit_message(view=None)
-        @discord.ui.button(emoji='<:fast_backward:918877900109914122>', style=discord.ButtonStyle.grey,disabled=True)
-        async def first(self,button,interaction):
-            if interaction.user.id != self.ctx.author.id:
-                await interaction.response.send_message("You can't use this!",ephemeral=True)
-                return
-            self.next.disabled=False
-            self.last.disabled=False
-            self.counter=0
-            button.disabled=True
-            self.back.disabled=True
-            await interaction.response.edit_message(embed=self.lb[0],view=self)
-        @discord.ui.button(emoji='<:backward:918872031796277320>', style=discord.ButtonStyle.gray,disabled=True)
-        async def back(self,button,interaction):
-            if interaction.user.id != self.ctx.author.id:
-                await interaction.response.send_message("You can't use this!",ephemeral=True)
-                return
-            self.next.disabled=False
-            self.last.disabled=False
-            if self.counter>0:
-                self.counter-=1
-                if self.counter==0:
-                    button.disabled=True
-                    self.first.disabled=True
-                await interaction.response.edit_message(embed=self.lb[self.counter],view=self)
-                
-        @discord.ui.button(emoji='<:forward:918871999596617790>', style=discord.ButtonStyle.grey)
-        async def next(self,button,interaction):
-            if interaction.user.id != self.ctx.author.id:
-                await interaction.response.send_message("You can't use this!",ephemeral=True)
-                return
-            self.back.disabled=False
-            self.first.disabled=False
-            if self.counter<len(self.lb)-1:
-                self.counter+=1
-                if self.counter==len(self.lb)-1:
-                    button.disabled=True
-                    self.last.disabled=True
-                await interaction.response.edit_message(embed=self.lb[self.counter],view=self)
-        @discord.ui.button(emoji="<:fast_forward:918872194099077191>", style=discord.ButtonStyle.gray)
-        async def last(self,button,interaction):
-            if interaction.user.id != self.ctx.author.id:
-                await interaction.response.send_message("You can't use this!",ephemeral=True)
-                return
-            self.back.disabled=False
-            self.first.disabled=False
-            button.disabled=True
-            self.next.disabled=True
-            self.counter=len(self.lb)-1
-            await interaction.response.edit_message(embed=self.lb[-1],view=self)
-
     @slash_command(default_permission=False)
     @discord.default_permissions(ban_members=True,)
     async def add_xp(self,ctx,user:Option(discord.Member,"User to give xp to"),xp:Option(int,"Amount of xp to be added")):
@@ -673,7 +693,8 @@ class levelling(commands.Cog):
         with io.BytesIO() as image_binary:
             self.background.save(image_binary, 'PNG')
             image_binary.seek(0)
-            await ctx.send_followup(file=discord.File(fp=image_binary, filename='Level.png'))
+            await ctx.send_followup(view=image_card(None,'Level.png'),
+                                    file=discord.File(fp=image_binary, filename='Level.png'))
 
     @slash_command()
     async def leaderboard(self,ctx):
@@ -692,7 +713,6 @@ class levelling(commands.Cog):
         first=0
         count=0
         rank=0
-        view=self.paginator(ctx)
         for x in self.lb1:
             rank+=1
             if x == ctx.author.id:break
@@ -707,13 +727,7 @@ class levelling(commands.Cog):
             desc[int(first/10)]+=f"❯`{int(first+1)}` {name}\n　└─{self.lb1[i]}\n"
             count+=1
             first+=1
-        counter=0
-        for i in desc:
-            counter+=1
-            embed = discord.Embed(title="Leaderboard",description=i,timestamp=datetime.datetime.utcnow())
-            embed.set_footer(text=f"{counter}/{len(desc)} • Your rank : {rank}",icon_url=ctx.author.avatar.url)
-            view.lb.append(embed)
-        await ctx.send_followup(embed=view.lb[0],view=view)
+        await ctx.send_followup(view=BoardView(BoardData(desc,ctx.author.id,rank)))
 
     @Cog.listener("on_message")
     async def on_message(self,message):
