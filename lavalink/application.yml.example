@@ -4,7 +4,7 @@ server:
 
 lavalink:
   server:
-    password: "youshallnotpass"
+    password: "CHANGE_ME"
     sources:
       youtube: false  # Handled by the youtube-plugin below
       bandcamp: true
@@ -57,8 +57,8 @@ plugins:
       flowerytts: false
       youtube: true
     spotify:
-      clientId: "${SPOTIFY_CLIENT_ID}"
-      clientSecret: "${SPOTIFY_CLIENT_SECRET}"
+      clientId: "CHANGE_ME"
+      clientSecret: "CHANGE_ME"
       countryCode: "US"
       playlistLoadLimit: 6
       albumLoadLimit: 6
