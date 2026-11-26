@@ -25,9 +25,10 @@ class ClearButton(discord.ui.Button):
             x.style=discord.ButtonStyle.gray
         self.style=discord.ButtonStyle.red
         await interaction.response.edit_message(view=self.view)
-        for x in self.cat:
-            role2 = interaction.guild.get_role(x)
-            await interaction.user.remove_roles(role2)
+        held = [r for r in (interaction.guild.get_role(x) for x in self.cat)
+                if r is not None and r in interaction.user.roles]
+        if held:
+            await interaction.user.remove_roles(*held)
 
 class RoleButton(discord.ui.Button):
     def __init__(self, role: discord.Role,style):
@@ -47,17 +48,19 @@ class RoleButton(discord.ui.Button):
 
         if role not in user.roles:
             if role.id in pronoun:
-                for x in pronoun:
-                    role2 = interaction.guild.get_role(x)
-                    await user.remove_roles(role2)
+                held = [r for r in (interaction.guild.get_role(x) for x in pronoun)
+                        if r is not None and r in user.roles]
+                if held:
+                    await user.remove_roles(*held)
                 for x in self.view.children:
                     if x.custom_id=="Clear":
                         continue
                     x.style = discord.ButtonStyle.gray
             if role.id in region:
-                for x in region:
-                    role2 = interaction.guild.get_role(x)
-                    await user.remove_roles(role2)
+                held = [r for r in (interaction.guild.get_role(x) for x in region)
+                        if r is not None and r in user.roles]
+                if held:
+                    await user.remove_roles(*held)
                 for x in self.view.children:
                     if x.custom_id=="Clear":
                         continue
@@ -163,7 +166,9 @@ class buttonrole1(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        self.bot.add_view(Role_cat())
+        if not getattr(self, "views_ready", False):
+            self.views_ready = True
+            self.bot.add_view(Role_cat())
 
 def setup(bot):
     bot.add_cog(buttonrole1(bot))

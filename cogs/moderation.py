@@ -328,8 +328,11 @@ class Moderation(commands.Cog):
                 except ValueError:
                     await ctx.respond("Warn ID must be a number or 'all'.", ephemeral=True)
                     return
-                query.execute('DELETE FROM warns WHERE "id" = %s', (wid,))
-                con.commit()
+                # Scoped to the member, so a wrong number cannot clear someone else's warn.
+                query.execute('DELETE FROM warns WHERE "id" = %s AND "user" = %s', (wid, member.id))
+                if query.rowcount == 0:
+                    await ctx.respond(f"**{member.name}** has no warn **#{wid}**.", ephemeral=True)
+                    return
                 await ctx.respond(f"Cleared warn **#{wid}** from **{member.name}**.")
                 cleared = f"#{wid}"
 
@@ -360,7 +363,12 @@ class Moderation(commands.Cog):
                 return
 
         try:
-            query.execute('SELECT * FROM warns WHERE "user" = %s', (user.id,))
+            # Named columns, because the table order is user, reason, moderator, id,
+            # date — reading row[0] as the warn id showed the member's Discord ID and
+            # printed the row id where the date belonged.
+            query.execute(
+                'SELECT "id", "reason", "moderator", "date" FROM warns WHERE "user" = %s ORDER BY "id"',
+                (user.id,))
             results = query.fetchall()
             count = len(results)
 
@@ -374,11 +382,7 @@ class Moderation(commands.Cog):
             else:
                 # Show warns in reverse order (newest first)
                 for row in reversed(results):
-                    # row format: (id, user, reason, moderator, date)  — adapt indices to your schema
-                    warn_id = row[0]
-                    warn_reason = row[1] if len(row) > 1 else "N/A"
-                    mod_id = row[2] if len(row) > 2 else None
-                    warn_date = row[3] if len(row) > 3 else "N/A"
+                    warn_id, warn_reason, mod_id, warn_date = row
 
                     mod_name = "Unknown"
                     if mod_id:

@@ -12,5 +12,13 @@ cogs/firestore.json
 .cache
 
 # Lavalink
+lavalink/application.yml
+lavalink/application.yml.bak
 lavalink/plugins/
 lavalink/logs/
+
+# AI Sync Context
+.ai-sync/
+CLAUDE.md
+AGENTS.md
+GEMINI.md

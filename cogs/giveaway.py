@@ -6,7 +6,7 @@ from main import query,con
 import time
 from datetime import datetime, timezone, timedelta
 from discord.ext import tasks
-import requests
+import aiohttp
 import random
 import base64,json
 import heroku3
@@ -20,6 +20,18 @@ extra = 150
 min= 100
 whitelist=[814016728950112317,883563221947125770] # 250,400,550,700,850,1000,1150,1300,1450
 cooldown=[]
+async def fetch_bs_player(tag):
+    """Blocking requests.get here froze the whole bot for the length of the call."""
+    headers = {"Authorization": f"Bearer {os.getenv('BRAWL_STARS_API_TOKEN')}"}
+    url = f'https://bsproxy.royaleapi.dev/v1/players/%23{tag}'
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url,headers=headers,timeout=aiohttp.ClientTimeout(total=10)) as r:
+                return await r.json()
+    except Exception as e:
+        print(f"[giveaway] Brawl Stars lookup failed for {tag}: {e}")
+        return {}
+
 class Next(discord.ui.Button):
     def __init__(self,item,winners,picture,query,con,ctx,message,tag,role):
         self.ctx=ctx
@@ -108,16 +120,16 @@ class Dropdown(discord.ui.Select):
         await interaction.response.edit_message(view=self.view)
 
 class remove(discord.ui.View):
-    def __init__(self,query,con):
+    def __init__(self,query,con,message_id):
         self.query = query
         self.con = con
+        self.message_id = message_id
         super().__init__()
     @discord.ui.button(emoji='<:BS_Tick:881610301152305202>', style=discord.ButtonStyle.green)
     async def yes(self,button,interaction):
-        sql = 'DELETE FROM "giveaway" WHERE "user"= %s AND "giveaway"=%s'
-        val=(interaction.user.id,interaction.original_message.id)
+        sql = 'DELETE FROM "giveaway" WHERE "user"= %s AND "message"=%s'
+        val=(interaction.user.id,self.message_id)
         self.query.execute(sql,val)
-        self.con.commit()
         await interaction.response.edit_message(content="Your entry has been removed :(",view=None)
     @discord.ui.button(emoji='<:BS_Cross:881610413874225292>', style=discord.ButtonStyle.red)
     async def no(self,button,interaction:discord.Interaction):
@@ -142,7 +154,7 @@ class Continue(discord.ui.View):
             self.con.commit()
             await interaction.response.edit_message(content="Giveaway entry confirmed!",view=None)
         elif self.ref=='end':
-            await end2(self.ctx,self.message_id)
+            await end2(interaction.client,self.message_id)
             await interaction.response.edit_message(content="Giveaway ended!",view=None)
     @discord.ui.button(emoji='<:BS_Cross:881610413874225292>', style=discord.ButtonStyle.red)
     async def no(self,button,interaction:discord.Interaction):
@@ -163,18 +175,25 @@ class tag(discord.ui.Modal):
             ),*args, **kwargs
         )
     async def callback(self, interaction: discord.Interaction):
+        bstag = self.children[0].value.replace('#','').strip()
+        headers = {"Authorization": f"Bearer {os.getenv('BRAWL_STARS_API_TOKEN')}"}
+        url = f'https://bsproxy.royaleapi.dev/v1/players/%23{bstag}'
         try:
-            headers = {"Authorization": f"Bearer {os.getenv('BRAWL_STARS_API_TOKEN')}"}
-            bstag = self.children[0].value
-            bstag = bstag.replace('#','')
-            response = requests.get(f'https://bsproxy.royaleapi.dev/v1/players/%23{bstag}', headers=headers)
-            view = Continue(bstag,self.query,self.con,'enter',self,self.message_id)
-            await interaction.response.send_message(f"Are you **{response.json()['name']}**? Click Yes to enter giveaway\n*You can't change your player tag later. You will receive item in this account only.*",ephemeral=True,view=view)
-        except : 
-            if response.json()['reason']=='notFound':
-                await interaction.response.send_message(f"Incorrect Brawl Stars Tag! Try again",ephemeral=True)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url,headers=headers,timeout=aiohttp.ClientTimeout(total=10)) as r:
+                    data = await r.json()
+        except Exception as e:
+            await interaction.response.send_message(f"Could not reach the Brawl Stars API. Try again in a minute.\n`{e}`",ephemeral=True)
+            return
+        if 'name' not in data:
+            reason = data.get('reason','unknown')
+            if reason=='notFound':
+                await interaction.response.send_message("Incorrect Brawl Stars Tag! Try again",ephemeral=True)
             else:
-                await interaction.response.send_message(f"Error. Contact <@745884061066592266> for more guidance!\n Send this screenshot of this error code : {response.json()['reason']}",ephemeral=True)
+                await interaction.response.send_message(f"Error. Contact <@745884061066592266> for more guidance!\nSend a screenshot of this error code : {reason}",ephemeral=True)
+            return
+        view = Continue(bstag,self.query,self.con,'enter',self,self.message_id)
+        await interaction.response.send_message(f"Are you **{data['name']}**? Click Yes to enter giveaway\n*You can't change your player tag later. You will receive item in this account only.*",ephemeral=True,view=view)
 class enter(discord.ui.View):
     def __init__(self,query,con):
         self.query=query
@@ -218,7 +237,7 @@ class enter(discord.ui.View):
         self.query.execute(sql,val)
         x = self.query.fetchall()
         if len(x)>0:
-            await interaction.response.send_message("You have already entered the giveaway!\nWant to remove your entry?",ephemeral=True,view=remove(self.query,self.con))
+            await interaction.response.send_message("You have already entered the giveaway!\nWant to remove your entry?",ephemeral=True,view=remove(self.query,self.con,interaction.message.id))
         else:
             #tag='No'
             if tag2=='No':
@@ -242,6 +261,12 @@ class giveaway(commands.Cog):
         self.bot = bot
         self.query = query
         self.con = con
+        self.tracked = []
+        self.views_ready = False
+        self.refresh_tracked.start()
+
+    def cog_unload(self):
+        self.refresh_tracked.cancel()
     giveaway = SlashCommandGroup("giveaway", "giveaways related commands",default_member_permissions=permissions.Permissions(administrator=True))
 
     @giveaway.command(default_permission=False,description="Start the giveaway")
@@ -292,10 +317,8 @@ class giveaway(commands.Cog):
                 winner_text2+=','
             if tag==1:
                 winner_text2+=f'<@{x}>'
-                headers = {"Authorization": f"Bearer {os.getenv('BRAWL_STARS_API_TOKEN')}"}
-        
-                response = requests.get(f'https://bsproxy.royaleapi.dev/v1/players/%23{entries[x]}', headers=headers)
-                winner_text+=f'- <@{x}>\n  - Ingame name : {response.json()["name"]}\n  - Brawl Stars Tag : #{entries[x]}'
+                data = await fetch_bs_player(entries[x])
+                winner_text+=f'- <@{x}>\n  - Ingame name : {data.get("name","unknown")}\n  - Brawl Stars Tag : #{entries[x]}'
             else:
                 winner_text2+=f'<@{x}>'
                 winner_text+=f'- <@{x}>\n'
@@ -305,8 +328,25 @@ class giveaway(commands.Cog):
         await ctx.respond(winner_text)
     @commands.Cog.listener()
     async def on_ready(self):
-        self.bot.add_view(enter(self.query,self.con))
-    
+        if not self.views_ready:
+            self.views_ready = True
+            self.bot.add_view(enter(self.query,self.con))
+        await self.refresh_tracked()
+
+    @tasks.loop(minutes=2)
+    async def refresh_tracked(self):
+        """Message counting only matters while a giveaway with a message requirement
+        is open. Caching that list keeps on_message off the database entirely."""
+        try:
+            query.execute('SELECT "message" FROM gconfig WHERE "message2" IS NOT NULL')
+            self.tracked = [row[0] for row in query.fetchall()]
+        except Exception as e:
+            print(f"[giveaway] could not refresh tracked giveaways: {e}")
+
+    @refresh_tracked.before_loop
+    async def before_refresh_tracked(self):
+        await self.bot.wait_until_ready()
+
     @Cog.listener("on_message")
     async def on_message(self,message):
         if message.guild is None:
@@ -317,48 +357,35 @@ class giveaway(commands.Cog):
             return
         if message.channel.id not in whitelist:
             return
-        sql='SELECT * FROM gconfig'
-        query.execute(sql)
-        myresult = query.fetchall()
-        if(len(myresult))>0:
-            for x in myresult:
-                print(x)
-                print(x[3])
-                if x[3]!=None:
-                    if message.author.id not in cooldown:
-                        sql = 'SELECT "message2" FROM "gmsg" where "user" =%s and message=%s'
-                        val=(message.author.id,x[1])
-                        self.query.execute(sql,val)
-                        y = self.query.fetchall()
-                        if len(y)>0:
-                            print(y)
-                            count = y[0][0]
-                            count+=1
-                            sql = 'UPDATE "gmsg" SET "message2" = %s where "user"=%s'
-                            val=(count,message.author.id)
-                            self.query.execute(sql,val)
-                            self.con.commit()
-                            if count ==1:
-                                await message.reply("You can now join the giveaway!",ephemeral=True)
-                            elif(count%150):
-                                pass
-                        else:
-                            count =1
-                            sql = 'INSERT INTO "gmsg" ("user","message","message2") values (%s,%s,%s)'
-                            val=(message.author.id,x[1],count)
-                            self.query.execute(sql,val)
-                            self.con.commit()
+        if not self.tracked or message.author.id in cooldown:
+            return
+        for giveaway_msg in self.tracked:
+            # message2 is scoped to one giveaway, so both keys belong in the WHERE.
+            query.execute(
+                'UPDATE "gmsg" SET "message2" = "message2" + 1 where "user"=%s and "message"=%s',
+                (message.author.id,giveaway_msg))
+            if query.rowcount == 0:
+                query.execute(
+                    'INSERT INTO "gmsg" ("user","message","message2") values (%s,%s,%s)',
+                    (message.author.id,giveaway_msg,1))
+                await message.reply("You can now join the giveaway!",
+                                    allowed_mentions=discord.AllowedMentions.none(),
+                                    delete_after=30)
 
 
 
 
-async def end2(self,message_id):
+async def end2(bot,message_id):
     sql='SELECT * FROM gconfig where "message"=%s'
     query.execute(sql,(message_id,))
     myresult = query.fetchall()
+    if not myresult:
+        return
     lines = myresult[0]
-    print(int(lines[1]))
-    message = await self.bot.get_channel(783973682137530388).fetch_message(int(lines[1]))
+    # Drop the row first. Anything that fails below used to leave the giveaway in
+    # gconfig, so the 30s loop announced the same winners over and over.
+    query.execute('DELETE FROM "gconfig" where "message"=%s',(message_id,))
+    message = await bot.get_channel(783973682137530388).fetch_message(int(lines[1]))
     winner=lines[2]
     embed = message.embeds[0]
     embed:discord.Embed
@@ -368,16 +395,17 @@ async def end2(self,message_id):
     val=(message_id,)
     query.execute(sql,val)
     myresult = query.fetchall()
-    print(myresult)
     for x in myresult:
         entries[x[0]]=x[1]
-    winners=[]
-    total = len(list(entries.keys()))
-    if int(winner)>len(list(entries.keys())):
-        winner = len(list(entries.keys()))
-    winners= random.sample(list(entries.keys()), int(winner))
-    print(winners)
-    if len(winners)>1: 
+    total = len(entries)
+    if total==0:
+        embed.add_field(name="Winners",value="Nobody entered.")
+        await message.edit(embed=embed,view=None)
+        await message.reply("Giveaway ended with no entries.")
+        return
+    winner = min(int(winner),total)
+    winners= random.sample(list(entries.keys()), winner)
+    if len(winners)>1:
         winner_text="# Congratulations to the winners:\n"
     else:winner_text="# Congratulations to the winner:\n"
     if entries[winners[0]]=="None" :
@@ -392,10 +420,8 @@ async def end2(self,message_id):
             winner_text2+=','
         if tag==1:
             winner_text2+=f'<@{x}>'
-            headers = {"Authorization": f"Bearer {os.getenv('BRAWL_STARS_API_TOKEN')}"}
-        
-            response = requests.get(f'https://bsproxy.royaleapi.dev/v1/players/%23{entries[x]}', headers=headers)
-            winner_text+=f'- <@{x}>\n  - Ingame name : {response.json()["name"]}\n  - Brawl Stars Tag : #{entries[x]}'
+            data = await fetch_bs_player(entries[x])
+            winner_text+=f'- <@{x}>\n  - Ingame name : {data.get("name","unknown")}\n  - Brawl Stars Tag : #{entries[x]}'
         else:
             winner_text2+=f'<@{x}>'
             winner_text+=f'- <@{x}>\n'
@@ -405,12 +431,6 @@ async def end2(self,message_id):
     await message.edit(embed=embed,view=None)
     message:discord.Message
     await message.reply(winner_text)
-    sql = 'DELETE FROM "gconfig" where "message"=%s'
-    self.query.execute(sql,(message_id,))
-    self.con.commit()
-    sql='SELECT * FROM giveaway'
-    query.execute(sql)
-    myresult = query.fetchall()
 
 def converttime(time):
     ftime=0
@@ -420,7 +440,11 @@ def converttime(time):
         unit = x[-1]
         if unit not in units:
             return "error"
-        t = int(x[:-1])
+        try:
+            t = int(x[:-1])
+        except ValueError:
+            return "error"
+
         if unit == "s":
             ftime=ftime+t
         elif unit == "h":

@@ -4,23 +4,10 @@ from discord.ext.commands.cog import Cog
 from discord.ext import commands
 import time
 from discord.ext import tasks
-import psycopg2
 import os
-def get_connection():
-    try:
-        return psycopg2.connect(
-            database=os.getenv("POSTGRES_DB"),
-            user=os.getenv("POSTGRES_USER"),
-            password=os.getenv("POSTGRES_PASSWORD"),
-            host=os.getenv("POSTGRES_HOST"),
-            port=int(os.getenv("POSTGRES_PORT", 5432)),
-			sslmode="require"
-        )
-    except Exception as e:
-        print(f"Failed to connect to database: {e}")
-        raise  # Re-raise so the actual error is visible
-con = get_connection()
-query = con.cursor()
+# Shared with every other cog, so a dropped connection is reopened in one place
+# instead of each cog holding its own dead socket.
+from main import query,con
 
 class codeshock(commands.Cog):
     def __init__(self, bot):
@@ -118,7 +105,11 @@ def converttime(duration):
         unit = x[-1]
         if unit not in units:
             return "error"
-        t = int(x[:-1])
+        try:
+            t = int(x[:-1])
+        except ValueError:
+            return "error"
+
         if unit == "s":
             ftime=ftime+t
         elif unit == "h":

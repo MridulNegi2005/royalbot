@@ -10,22 +10,7 @@ from main import query,con
 from dateutil import parser
 import datetime
 import cogs.giveaway as giveaway
-import psycopg2
 import os
-def get_connection():
-    try:
-        return psycopg2.connect(
-            database=os.getenv("POSTGRES_DB"),
-            user=os.getenv("POSTGRES_USER"),
-            password=os.getenv("POSTGRES_PASSWORD"),
-            host=os.getenv("POSTGRES_HOST"),
-            port=int(os.getenv("POSTGRES_PORT", 5432)),
-			sslmode="require"
-        )
-    except:
-        return False
-con2 = get_connection()
-query2 = con.cursor()
 api_key = os.getenv("YOUTUBE_API_KEY")
 channel_id = "UCEZqqxc-NMD7uGCod8N0gOw"
 upload_id="UUEZqqxc-NMD7uGCod8N0gOw"
@@ -34,10 +19,6 @@ class sub(commands.Cog):
 		self.bot = bot
 		self.sub_count_previous=0
 		self.video_id_previous=[]
-		self.video_chan = self.bot.get_channel(767591735295213586)
-		self.sub_chan = self.bot.get_channel(781207856295706635)
-		self.member_chan =self.bot.get_channel(824170799178580008)
-		self.guild = self.bot.get_guild(767591734841835540)
 		#self.getSubscriberCount.start()
 		self.mem_update.start()
 		#self.getVideo.start()
@@ -98,53 +79,63 @@ class sub(commands.Cog):
 
 	@tasks.loop(seconds=600.0)
 	async def mem_update(self):
-		guild =self.guild
-		chan = self.member_chan
-		count = guild.member_count
-		name = f"Members: {count}"
+		# Resolved here, not in __init__ — the cache is not filled yet at load time.
+		guild = self.bot.get_guild(767591734841835540)
+		chan = self.bot.get_channel(824170799178580008)
+		if guild is None or chan is None:
+			return
+		name = f"Members: {guild.member_count}"
 		if chan.name == name:
 			return
-		await chan.edit(name=name,reason="Scheduled Member Count Update")
+		try:
+			await chan.edit(name=name,reason="Scheduled Member Count Update")
+		except discord.HTTPException as e:
+			print(f"[sub] member count update failed: {e}")
 
-	@tasks.loop(seconds=10.0)
+	@mem_update.before_loop
+	async def before_mem_update(self):
+		await self.bot.wait_until_ready()
+
+	# Both queries filter on time in SQL, so an idle server transfers no rows at all.
+	@tasks.loop(seconds=30.0)
 	async def temprole(self):
 		guild = self.bot.get_guild(767591734841835540)
+		if guild is None:
+			return
+		now = int(time.time())
 		try:
-			sql='SELECT * FROM gconfig'
-			query.execute(sql)
-			myresult = query.fetchall()
-			if len(myresult)==0:
-				return
-			for x in myresult:
-				time2 = x[0]
-				if int(time2)<=int(time.time()):
-					await giveaway.end2(self,x[1])
-		except:
-			pass
-		sql='SELECT * FROM temprole'
-		query.execute(sql)
-		myresult = query.fetchall()
-		for x in myresult:
-			a = str(x)
-			y = ast.literal_eval(a)
-			if y[2] <= int(time.time()):
-					user = guild.get_member(y[0])
-					role = guild.get_role(y[1])
-					if user is not None and role is not None:
-						await user.remove_roles(role)
-						sql = 'DELETE FROM temprole WHERE "user" = %s AND "role" = %s'
-						val=(y[0],y[1])
-						query.execute(sql,val)
-						con.commit()
-					else:
-						if user is None:
-							print(f"[temprole debug] Member not found for user ID: {y[0]}")
-						if role is None:
-							print(f"[temprole debug] Role not found for role ID: {y[1]}")
-						# Remove the entry from the database if user or role is missing
-						sql = 'DELETE FROM temprole WHERE "user" = %s AND "role" = %s'
-						val = (y[0], y[1])
-						query.execute(sql, val)
-						con.commit()
+			query.execute('SELECT "message" FROM gconfig WHERE "time" <= %s',(now,))
+			for x in query.fetchall():
+				await giveaway.end2(self.bot,x[0])
+		except Exception as e:
+			print(f"[sub] giveaway end failed: {e}")
+
+		try:
+			query.execute('SELECT "user","role" FROM temprole WHERE "time" <= %s',(now,))
+			expired = query.fetchall()
+		except Exception as e:
+			print(f"[sub] temprole lookup failed: {e}")
+			return
+
+		for user_id,role_id in expired:
+			member = guild.get_member(user_id)
+			role = guild.get_role(role_id)
+			if member is not None and role is not None:
+				try:
+					await member.remove_roles(role,reason="Temporary role expired")
+				except discord.HTTPException as e:
+					print(f"[sub] could not remove role {role_id} from {user_id}: {e}")
+					continue
+			query.execute('DELETE FROM temprole WHERE "user" = %s AND "role" = %s',(user_id,role_id))
+
+	@temprole.before_loop
+	async def before_temprole(self):
+		await self.bot.wait_until_ready()
+
+	@temprole.error
+	async def temprole_error(self,error):
+		# Without this a single exception silently kills the loop until a restart.
+		print(f"[sub] temprole loop crashed: {error!r}")
+		self.temprole.restart()
 def setup(bot):
 	bot.add_cog(sub(bot))
