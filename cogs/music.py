@@ -189,18 +189,29 @@ class CosmicPlayer(wavelink.Player):
         self._np_task = None
 
     async def _np_updater(self):
-        """Re-render the now-playing card every few seconds so the bar moves."""
+        """Re-render the now-playing card so the bar moves.
+
+        Every edit is a REST call against the same message, which eats the bot's
+        rate limit budget, so keep the interval coarse and stop as soon as there is
+        nothing moving. Three consecutive failed edits mean the card is gone."""
+        failures = 0
         try:
             while True:
-                await asyncio.sleep(8)
-                if self.np_message is None or self.current_song is None:
+                await asyncio.sleep(15)
+                if self.np_message is None or self.current_song is None or not self.connected:
                     break
                 if self.paused:
                     continue
                 try:
                     await self.np_message.edit(view=NowPlayingView(self))
+                    failures = 0
+                except discord.NotFound:
+                    self.np_message = None
+                    break
                 except Exception:
-                    pass
+                    failures += 1
+                    if failures >= 3:
+                        break
         except asyncio.CancelledError:
             pass
 
@@ -394,9 +405,12 @@ class Music(commands.Cog, name="Music"):
         if not isinstance(player, CosmicPlayer):
             return
 
-        # Advance on FINISHED (natural end), LOAD_FAILED (error), and STOPPED (skip)
-        # Do NOT advance on REPLACED (a new track was already started via player.play())
-        if str(payload.reason).upper() in ("FINISHED", "LOAD_FAILED", "STOPPED"):
+        # Advance on a natural end, a load failure and a skip, but not on REPLACED —
+        # there a new track was already started by player.play().
+        # Lavalink spells these "finished" / "loadFailed" / "stopped", so strip the
+        # separators before comparing instead of guessing at the exact casing.
+        reason = str(payload.reason).upper().replace("_", "")
+        if reason in ("FINISHED", "LOADFAILED", "STOPPED"):
             await player.play_next()
 
     @commands.Cog.listener()
@@ -405,6 +419,24 @@ class Music(commands.Cog, name="Music"):
         player = payload.player
         if isinstance(player, CosmicPlayer):
             player.playback_start_time = time.time()
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        """Leave once the channel is empty. A forgotten player keeps a voice
+        websocket and the now-playing updater alive for as long as the bot runs."""
+        if member.bot or before.channel is None:
+            return
+        player = _get_cosmic_player(member.guild)
+        if player is None or player.channel is None:
+            return
+        if before.channel != player.channel or after.channel == player.channel:
+            return
+        if any(not m.bot for m in player.channel.members):
+            return
+        await asyncio.sleep(120)
+        if player.connected and player.channel and not any(not m.bot for m in player.channel.members):
+            player.clear_queue()
+            await player.disconnect()
 
     # ─── Play ─────────────────────────────────────────────
 
@@ -418,6 +450,12 @@ class Music(commands.Cog, name="Music"):
             return
 
         channel = ctx.author.voice.channel
+
+        # Without a live node every call below fails with a wavelink traceback the
+        # user cannot act on, so say what is actually wrong.
+        if not any(n.status == wavelink.NodeStatus.CONNECTED for n in wavelink.Pool.nodes.values()):
+            await ctx.send_followup("The music server is not reachable right now. Ask an admin to check Lavalink.")
+            return
 
         # 2. Connect or get existing player
         player: CosmicPlayer | None = self._get_player(ctx)
@@ -643,9 +681,9 @@ class Music(commands.Cog, name="Music"):
             return
 
         vol = max(0, min(100, volume))
-        # Lavalink volume range is 0-1000, but 0-100 maps nicely as percentage
-        # wavelink's set_volume() accepts 0-1000
-        await player.set_volume(vol * 10)
+        # In Lavalink 100 is already normal volume. Sending vol*10 played everything
+        # at up to 10x gain, which is where the clipping came from.
+        await player.set_volume(vol)
 
         await ctx.respond(f"Volume set to **{vol}%**")
 
@@ -710,7 +748,7 @@ class Music(commands.Cog, name="Music"):
         seconds = duration.seconds % 60
         embed.add_field(name="Duration", value=f"{minutes}:{seconds:02d}", inline=True)
 
-        embed.set_footer(text=f"Listening by {member.display_name}", icon_url=member.avatar.url if member.avatar else discord.Embed.Empty)
+        embed.set_footer(text=f"Listening by {member.display_name}", icon_url=member.display_avatar.url)
         await ctx.respond(embed=embed)
 
     # ─── Before Invoke Checks ─────────────────────────────
