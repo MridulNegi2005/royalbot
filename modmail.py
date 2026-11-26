@@ -39,9 +39,51 @@ class delete(discord.ui.Button):
 		message = await self.channel.fetch_message(int(self.custom_id))
 		await message.delete()
 		await interaction.response.send_message(f"Message deleted!")
+async def collect_files(message):
+	"""Attachments as files, ready to re-send. Build these before deleting the
+	source message, because the CDN links stop working once it is gone."""
+	files=[]
+	for attachment in message.attachments:
+		try:
+			files.append(await attachment.to_file())
+		except discord.HTTPException:
+			pass
+	return files
+
+def describe_extras(message):
+	"""Stickers and voice notes are not attachments, so nothing used to carry them."""
+	lines=[]
+	for sticker in message.stickers:
+		lines.append(f"[sticker: {sticker.name}]({sticker.url})")
+	if any(a.duration_secs for a in message.attachments):
+		lines.append("[voice message]")
+	return "\n".join(lines)
+
+def relay_embed(message,title,colour):
+	body = message.content or ""
+	extras = describe_extras(message)
+	if extras:
+		body = f"{body}\n{extras}".strip()
+	if not body:
+		body = "*no text*"
+	embed = discord.Embed(description=body, colour=colour)
+	embed.set_author(name=title)
+	# One embed shows one image, so name the rest instead of dropping them silently.
+	images = [a for a in message.attachments if (a.content_type or "").startswith("image/")]
+	if images:
+		embed.set_image(url=images[0].url)
+	others = [a for a in message.attachments if a not in images[:1]]
+	if others:
+		embed.add_field(name=f"{len(others)} more attachment(s)",
+		                value="\n".join(a.filename for a in others)[:1024], inline=False)
+	return embed
+
 class Confirm(discord.ui.View):
 	def __init__(self,message):
-		self.message=message
+		# Not self.message: discord.ui.View owns that name and py-cord overwrites it
+		# with the bot's own prompt when the view is sent, which is why the first
+		# message always arrived in the ticket as an empty embed.
+		self.origin=message
 		super().__init__()
 	@discord.ui.button(emoji ="<:BS_Tick:881610301152305202>", style=discord.ButtonStyle.green)
 	async def tick(self,button,interaction):
@@ -88,11 +130,8 @@ class Confirm(discord.ui.View):
 			
 			categ = discord.utils.get(guild.categories, name = "Modmail tickets")
 						
-		file=[]
-		for x in self.message.attachments:
-			file.append(await x.to_file())
-		embed = discord.Embed(description = self.message.content, colour = 0xb734eb)
-		embed.set_author(name = "Message Received")
+		file = await collect_files(self.origin)
+		embed = relay_embed(self.origin,"Message Received",0xb734eb)
 		embed.set_footer(text=interaction.user,icon_url = interaction.user.display_avatar.url)
 		await thread.send(embed = embed,files=file)
 	@discord.ui.button(emoji ="<:BS_Cross:881610413874225292>", style=discord.ButtonStyle.red)
@@ -162,13 +201,9 @@ async def support(message):
 			channel = bot.get_channel(853590083739582474)
 			thread = discord.utils.get(channel.threads, name = f"{str(message.author.name)}{message.author.discriminator}",archived=False)
 			if thread:
-				attachment = message.attachments
-				embed = discord.Embed(description = message.content, colour = 0xb734eb)
-				embed.set_author(name = "Message Received")
+				file = await collect_files(message)
+				embed = relay_embed(message,"Message Received",0xb734eb)
 				embed.set_footer(text=message.author,icon_url = message.author.display_avatar.url)
-				file=[]
-				for x in attachment:
-					file.append(await x.to_file())
 				await thread.send(embed = embed,files=file)
 				msg = message
 				await msg.add_reaction("<:BS_Tick:881610301152305202>")
@@ -206,26 +241,20 @@ async def support(message):
 					if message.author.bot == True:
 						await message.add_reaction("<:BS_Cross:881610413874225292>")
 						return
-					embed1 = discord.Embed(description = message.content, colour = 0x61eb34)
-					embed1.set_author(name = "Message Received")
+					embed1 = relay_embed(message,"Message Received",0x61eb34)
 					embed1.set_footer(text=message.author,icon_url = message.author.display_avatar.url)
-					attachment = message.attachments
-					file=[]
-					for x in attachment:
-						file.append(await x.to_file())
-					message2 = await member.send(embed = embed1,files=file)
+					# Read once, up front. The echo below used to re-download them after
+					# message.delete(), by which point the CDN links were dead.
+					files_to_user = await collect_files(message)
+					files_to_thread = await collect_files(message)
+					message2 = await member.send(embed = embed1,files=files_to_user)
 					view=discord.ui.View(timeout=None)
 					dm = member.dm_channel or await member.create_dm()
 					view.add_item(delete(str(message2.id),dm))                                              
-					embed = discord.Embed(description = message.content, colour = 0x61eb34)
-					embed.set_author(name = "Message Sent")
+					embed = relay_embed(message,"Message Sent",0x61eb34)
 					embed.set_footer(text=message.author,icon_url = message.author.display_avatar.url)
-					attachment = message.attachments
 					await message.delete()
-					file=[]
-					for x in attachment:
-						file.append(await x.to_file())
-					await message.channel.send(embed=embed,view=view,files=file)
+					await message.channel.send(embed=embed,view=view,files=files_to_thread)
 				else:
 					await message.channel.send("The user left the server. You may now close ticket with `=close [reason]` command")
 					return
