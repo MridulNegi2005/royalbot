@@ -146,49 +146,98 @@ class invite2(discord.ui.View):
 	async def on_timeout(self,interaction):
 		await interaction.response.send_message("WTF")
 
+HELP_MODULES = (
+	("Main Menu", "<:warn:918879085789331456>", "View main page"),
+	("General", "<:settings:918878102900310016>", "General common commands"),
+	("Server Config", "<:configuration:918878174190907464>", "Commands related to server config."),
+	("Moderation", "<:moderation:918877676478021642>", "Help to moderatate the server. Mods must see it!"),
+	("Music", "<:music:918875299326877696>", "Listen to the music and enjoy! :)"),
+)
+HELP_TITLES = (
+	"<:help:928002911823343616> Cosmic Bot Help <:help:928002911823343616>",
+	"<:settings:918878102900310016> General Commands <:settings:918878102900310016>",
+	"<:configuration:918878174190907464> Server Config. <:configuration:918878174190907464>",
+	"<:moderation:918877676478021642> Moderation Commands <:moderation:918877676478021642>",
+	"<:music:918875299326877696> Music <:music:918875299326877696>",
+)
+HELP_CATEGORIES = (None, "general", "server config", "moderation", "music")
+TEXT_BUDGET = 3600
+
+
+class HelpPages:
+	def __init__(self, bodies, footer, owner):
+		self.bodies = bodies
+		self.footer = footer
+		self.owner = owner
+
+
+def build_help_pages(rows, footer, owner):
+	"""rows come from the help.db `command` table: category, name, description."""
+	grouped = {category: [] for category in HELP_CATEGORIES if category}
+	for row in rows:
+		bucket = grouped.get(row[0].lower())
+		if bucket is not None:
+			bucket.append(f"**{row[1]}**\n{row[2]}")
+
+	bodies = ["\n".join(f"{emoji} **{label}**\n{description}"
+					   for label, emoji, description in HELP_MODULES)]
+	for category in HELP_CATEGORIES[1:]:
+		bodies.append("\n".join(grouped[category]) or "No commands listed yet.")
+	return HelpPages(bodies, footer, owner)
+
+
 class Dropdown(discord.ui.Select):
-	def __init__(self,help):
-		self.help=help
-		options = [
-			discord.SelectOption(
-                label="Main Menu", description="View main page", emoji="<:warn:918879085789331456>"
-            ),
-            discord.SelectOption(
-                label="General", description="General common commands", emoji="<:settings:918878102900310016>"
-            ),
-            discord.SelectOption(
-                label="Server Config", description="Commands related to server config.", emoji="<:configuration:918878174190907464>"
-            ),
-			discord.SelectOption(
-                label="Moderation", description="Help to moderatate the server. Mods must see it!", emoji="<:moderation:918877676478021642>"
-            ),
-			discord.SelectOption(
-                label="Music", description="Listen to the music and enjoy! :)", emoji="<:music:918875299326877696>"
-            ),
-        ]
+	def __init__(self, pages, page):
+		self.pages = pages
 		super().__init__(
-            placeholder="Choose module",
-            min_values=1,
-            max_values=1,
-            options=options,
-        )
+			placeholder="Choose module",
+			min_values=1,
+			max_values=1,
+			options=[discord.SelectOption(label=label, description=description, emoji=emoji,
+										  default=index == page)
+					 for index, (label, emoji, description) in enumerate(HELP_MODULES)],
+		)
+
 	async def callback(self, interaction: discord.Interaction):
-		query = self.values[0]
-		view = Help(self.help)
-		if query == "Main Menu":
-			await interaction.response.send_message(embed=self.help[0],ephemeral=True)
-		elif query.lower() == 'general':
-			await interaction.response.send_message(embed=self.help[1],ephemeral=True)
-		elif query.lower() == 'server config':
-			await interaction.response.send_message(embed=self.help[2],ephemeral=True)
-		elif query.lower() == 'moderation' or query.lower()=="mod":
-			await interaction.response.send_message(embed=self.help[3],ephemeral=True)
-		elif query.lower() == 'music':
-			await interaction.response.send_message(embed=self.help[4],ephemeral=True)
-class Help(discord.ui.View):
-    def __init__(self,help):
-        super().__init__()
-        self.add_item(Dropdown(help))
+		if interaction.user.id != self.pages.owner:
+			await interaction.response.send_message(
+				"Run `/help` yourself to browse the modules.", ephemeral=True)
+			return
+		labels = [label.lower() for label, _, _ in HELP_MODULES]
+		page = labels.index(self.values[0].lower())
+		await interaction.response.edit_message(view=Help(self.pages, page))
+
+
+class Help(discord.ui.DesignerView):
+	"""One container, swapped per selection. A V2 view cannot share a message with
+	content or an embed, so the whole page lives in the container."""
+
+	def __init__(self, pages, page=0):
+		super().__init__(timeout=180, disable_on_timeout=True)
+		page = max(0, min(page, len(pages.bodies) - 1))
+		container = discord.ui.Container(color=0x5d27a1)
+		container.add_text(f"### {HELP_TITLES[page]}")
+		container.add_separator(divider=True)
+		container.add_text(pages.bodies[page][:TEXT_BUDGET])
+		container.add_separator(divider=True)
+		container.add_text(f"-# {pages.footer}")
+		container.add_row(Dropdown(pages, page))
+		self.add_item(container)
+
+
+def command_help_card(hint, note):
+	"""hint is a help.db row: category, name, description, syntax, example."""
+	view = discord.ui.DesignerView(timeout=None)
+	container = discord.ui.Container(color=0xe02626)
+	container.add_text(f"### {prefix}{hint[1]}\n-# {note}")
+	container.add_separator(divider=True)
+	container.add_text(
+		f"**Description**\n{hint[2]}\n\n"
+		f"**Syntax**\n`{prefix}{hint[3]}`\n\n"
+		f"**Example**\n{hint[4].format(prefix)}"[:TEXT_BUDGET])
+	view.add_item(container)
+	return view
+
 async def connect_lavalink():
 	uri = os.getenv("LAVALINK_URI", "http://127.0.0.1:2333")
 	password = os.getenv("LAVALINK_PASSWORD")
@@ -437,89 +486,26 @@ async def channels(ctx):
 async def help(ctx,query:Option(str,"Help regarding particular module/command",required=False,default=None)):
 	dev = bot.get_user(745884061066592266) or await bot.fetch_user(745884061066592266)
 
-	
-	help1 = discord.Embed(
-	    title=
-	    "<:help:928002911823343616> Cosmic Bot Help <:help:928002911823343616>",
-	    description="\u200b",
-	    color=0x5d27a1)
-	help1.set_footer(text=f"Developed by {dev.name}#{dev.discriminator}")
-	help1.add_field(name="<:warn:918879085789331456> Help",
-	                value="View This Page",
-	                inline=False)
-	help1.add_field(name="<:settings:918878102900310016> General",
-	                value="General common codes",
-	                inline=False)
-	help1.add_field(name="<:configuration:918878174190907464> Server config",
-	                value="Commands related to server config.",
-	                inline=False)
-	help1.add_field(name="<:moderation:918877676478021642> Moderation",
-	                value="Help to moderatate the server. Mods must see it!",
-	                inline=False)
-	help1.add_field(name="<:music:918875299326877696> Music",
-	                value="Listen to the music and enjoy! :)",
-	                inline=False)
-	help2 = discord.Embed(
-	    title=
-	    "<:settings:918878102900310016> General Commands <:settings:918878102900310016>",
-	    description="\u200b",
-	    color=0x5d27a1)
-	help2.set_footer(text=f"Developed by {dev.name}#{dev.discriminator}")
-	help3 = discord.Embed(
-	    title=
-	    "<:configuration:918878174190907464> Server Config. <:configuration:918878174190907464>",
-	    description="\u200b",
-	    color=0x5d27a1)
-	help3.set_footer(text=f"Developed by {dev.name}#{dev.discriminator}")
-	help4 = discord.Embed(
-	    title=
-	    "<:moderation:918877676478021642>  Moderation Commands <:moderation:918877676478021642>",
-	    description="\u200b",
-	    color=0x5d27a1)
-	help4.set_footer(text=f"Developed by {dev.name}#{dev.discriminator}")
-	help5 = discord.Embed(
-	    title=
-	    "<:music:918875299326877696> Music <:music:918875299326877696>",
-	    description="\u200b",
-	    color=0x5d27a1)
-	help5.set_footer(text=f"Developed by {dev.name}#{dev.discriminator}")
-	
-	cur.execute("SELECT * FROM command")
-	rows = cur.fetchall()
-	for row in rows:
-		if row[0].lower()=='general':
-			help2.add_field(name=row[1],value=row[2])
-		elif row[0].lower()=='server config':
-			help3.add_field(name=row[1],value=row[2])
-		elif row[0].lower()=='moderation':
-			help4.add_field(name=row[1],value=row[2])
-		elif row[0].lower()=='music':
-			help5.add_field(name=row[1],value=row[2])
-	help = (help1,help2,help3,help4,help5)
-	view = Help(help)
-	if query==None or query.lower() in ('general','server','moderation','mod','music'):
-		if query ==None:
-			message = await ctx.respond(embed=help1,view=view)
-		elif query.lower() == 'general':
-			message = await ctx.respond(embed=help2,view=view)
-		elif query.lower() == 'server':
-			message = await ctx.respond(embed=help3,view=view)
-		elif query.lower() == 'moderation' or query.lower()=="mod":
-			message = await ctx.respond(embed=help4,view=view)
-		elif query.lower() == 'music':
-			message = await ctx.respond(embed=help5,view=view)
-		
+	module = None
+	if query is None:
+		module = 0
 	else:
+		aliases = {"general": 1, "server": 2, "moderation": 3, "mod": 3, "music": 4}
+		module = aliases.get(query.lower())
+
+	if module is None:
 		cur.execute("SELECT * FROM command WHERE name like ?", (query,))
 		hint = cur.fetchone()
 		if hint is None:
 			await ctx.respond(f"No help found for `{query}`.",ephemeral=True)
 			return
-		help = discord.Embed(title=f"{prefix}{hint[1]}",description="*Values in () are optional and Values in [] are required*",color=0xe02626)
-		help.add_field(name="Description:",value=hint[2])
-		help.add_field(name="Syntax:",value=f"`{prefix}{hint[3]}`")
-		help.add_field(name="Example:",value=hint[4].format(prefix))
-		await ctx.respond(embed=help)
+		await ctx.respond(view=command_help_card(
+			hint,"Values in () are optional and values in [] are required"))
+		return
+
+	cur.execute("SELECT * FROM command")
+	pages = build_help_pages(cur.fetchall(),f"Developed by {dev.name}",ctx.author.id)
+	await ctx.respond(view=Help(pages,module))
 
 
 #-----------------AKINATOR------------------------
@@ -747,11 +733,8 @@ async def on_command_error(ctx, error):
 		hint = cur.fetchone()
 		if hint is None:
 			return
-		help = discord.Embed(title=f"{prefix}{hint[1]}",description="Values in () are optional\nValues in [] are required",color=0xe02626)
-		help.add_field(name="Description:",value=hint[2])
-		help.add_field(name="Syntax:",value=f"`{prefix}{hint[3]}`")
-		help.add_field(name="Example:",value=hint[4].format(prefix))
-		await ctx.send(embed=help)
+		await ctx.send(view=command_help_card(
+			hint,"Values in () are optional and values in [] are required"))
 
 
 	else:
