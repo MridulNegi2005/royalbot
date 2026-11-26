@@ -15,9 +15,29 @@ class highlight(commands.Cog):
         self.con = con
         self.query = query
         self.stemmer = Porter2Stemmer()
-        self.regex_pattern = re.compile('([^\s\w]|_)+')
-        self.website_regex = re.compile("https?:\/\/[^\s]*")
-    
+        self.regex_pattern = re.compile(r'([^\s\w]|_)+')
+        self.website_regex = re.compile(r"https?://[^\s]*")
+        self.watchlist = []
+        self.refresh_watchlist.start()
+
+    def cog_unload(self):
+        self.refresh_watchlist.cancel()
+
+    @tasks.loop(minutes=5)
+    async def refresh_watchlist(self):
+        """Keep the keyword list in memory. Reading it inside on_message cost a full
+        round trip to the database for every message sent in the server."""
+        try:
+            self.query.execute('SELECT "highlight","user" FROM highlight')
+            self.watchlist = [(self.stemmer.stem(k.lower()), int(v)) for k, v in self.query.fetchall()]
+        except Exception as e:
+            print(f"[highlight] could not refresh watchlist: {e}")
+
+    @refresh_watchlist.before_loop
+    async def before_refresh(self):
+        await self.bot.wait_until_ready()
+
+
     @slash_command(description="Check your level")
     async def highlight(self,ctx,action:Option(str,"Select action",choices=['add','remove','list','test']),word:Option(str,"Word to be added")):
         if action.lower() == 'add':
@@ -35,6 +55,7 @@ class highlight(commands.Cog):
             val = (ctx.author.id,word.lower(),word2)
             self.query.execute(sql, val)
             self.con.commit()
+            await self.refresh_watchlist()
             embed=discord.Embed(title="Highlight Created",description=f'I will DM you whenever someone mentions the word "{word}"',color=ctx.author.color)
             await ctx.send(embed=embed)
         elif action.lower() == 'remove':
@@ -45,6 +66,7 @@ class highlight(commands.Cog):
             val = (ctx.author.id,word)
             self.query.execute(sql, val)
             self.con.commit()
+            await self.refresh_watchlist()
             embed=discord.Embed(title="Highlight Deleted",description=f'Successfully removed the word "{word}" from your highlighted words',color=ctx.author.color)
             await ctx.send(embed=embed)
         elif action.lower() == 'list':
@@ -115,24 +137,23 @@ class highlight(commands.Cog):
             return
         if message.author.bot:
             return
-        sql = 'SELECT "highlight","user" FROM highlight'
-        self.query.execute(sql)
-        a = self.query.fetchall()
+        if not self.watchlist:
+            return
         final_message = self.website_regex.sub('', message.content.lower())
         final_message = self.regex_pattern.sub('', final_message)
-        final_message = [self.stemmer.stem(x) for x in final_message.split()]
-        for k, v in a:
+        final_message = set(self.stemmer.stem(x) for x in final_message.split())
+        for k, v in self.watchlist:
             local_last_seen = self.last_seen.get(
-                int(v), datetime.datetime.fromtimestamp(1503612000))
+                v, datetime.datetime.fromtimestamp(1503612000))
             if (datetime.datetime.utcnow() - local_last_seen).total_seconds() < 300:
                 continue
-            if self.stemmer.stem(k.lower()) in final_message and message.author.id != int(v):
-                e = await generate_context(self,message, k)
-                usr = message.guild.get_member(int(v))
+            if k in final_message and message.author.id != v:
+                usr = message.guild.get_member(v)
                 if usr is not None and message.channel.permissions_for(usr).read_messages:
                     ctx = await self.bot.get_context(message)
                     if ctx.prefix is not None:
                         continue
+                    e = await generate_context(self,message, k)
                     try:
                         await usr.send(f'In **{message.guild.name}** <#{message.channel.id}>, you were mentioned with the highlighted word "{k}"', embed=e)
                     except discord.Forbidden:
@@ -148,7 +169,7 @@ async def generate_context(self, msg, hl):
             time_2 = str(time).split('.')
             fmt.append(f"<t:{time_2[0]}:t> **{m.author.name}:** {m.content[:200]}")
         e = discord.Embed(title=f"**{hl}**", description='\n'.join(fmt[::-1]),color=0xe31b1b,timestamp=datetime.datetime.utcnow())
-        e.add_field(name="Source Message",value=f"[Jump to Message]({m.jump_url})")
+        e.add_field(name="Source Message",value=f"[Jump to Message]({msg.jump_url})")
         return e
 
 def setup(bot):
