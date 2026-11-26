@@ -1,4 +1,3 @@
-from distutils.log import error
 import discord
 from discord.ext import commands
 from discord.interactions import InteractionResponse
@@ -81,13 +80,11 @@ class Confirm(discord.ui.View):
 			guild = bot.get_guild(767591734841835540)
 			mod = discord.utils.get(guild.roles,id=816681109001207808)
 			admin = discord.utils.get(guild.roles,id=767591734850879495)
-			staff=[]
-			
-			for x in guild.members:
-				if mod in x.roles or admin in x.roles:
-					print(x)
-					staff.append(x)
-					await thread.add_user(x)
+			for staff_member in set((mod.members if mod else []) + (admin.members if admin else [])):
+				try:
+					await thread.add_user(staff_member)
+				except discord.HTTPException:
+					pass
 			
 			categ = discord.utils.get(guild.categories, name = "Modmail tickets")
 						
@@ -198,12 +195,11 @@ async def support(message):
 		if parent == 853590083739582474:
 			try:
 				messages = await thread.pins()
-				print(messages[0].content)
-				member =await message.guild.fetch_member(int(messages[0].content))
-				print(member)
-				print(member.dm_channel)
-				for x in dir(member):
-					print(x,"= ",getattr(member,x))
+				if not messages:
+					return
+				member = message.guild.get_member(int(messages[0].content))
+				if member is None:
+					member = await message.guild.fetch_member(int(messages[0].content))
 				if member:
 					if message.content.startswith('='):
 						return
@@ -219,13 +215,8 @@ async def support(message):
 						file.append(await x.to_file())
 					message2 = await member.send(embed = embed1,files=file)
 					view=discord.ui.View(timeout=None)
-					if member.dm_channel is None:
-						await member.create_dm()
-					print(member.dm_channel)
-					print(message2.id)
-					print(message2.channel)
-					print(await member.create_dm())
-					view.add_item(delete(str(message2.id),member.dm_channel))                                              
+					dm = member.dm_channel or await member.create_dm()
+					view.add_item(delete(str(message2.id),dm))                                              
 					embed = discord.Embed(description = message.content, colour = 0x61eb34)
 					embed.set_author(name = "Message Sent")
 					embed.set_footer(text=message.author,icon_url = message.author.display_avatar.url)
